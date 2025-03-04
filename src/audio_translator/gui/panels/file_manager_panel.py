@@ -72,6 +72,9 @@ class FileManagerPanel(SimplePanel):
         self.search_var = tk.StringVar()
         self.filter_var = tk.StringVar(value="全部")
         
+        # 异步处理控制标志
+        self._processing_active = False
+        
         # 调用父类初始化方法 - 只传递parent参数
         super().__init__(parent)
         
@@ -616,6 +619,22 @@ class FileManagerPanel(SimplePanel):
         if not all_items:
             return
             
+        # 检查是否已经全选
+        current_selected = self.file_tree.selection()
+        if len(current_selected) == len(all_items):
+            # 检查是否所有项都有选择标记
+            all_selected = True
+            for item_id in all_items:
+                values = self.file_tree.item(item_id, "values")
+                if values[0] != "✓":
+                    all_selected = False
+                    break
+                    
+            if all_selected:
+                # 已经全选，无需执行
+                self.log.debug("所有文件已经选中，无需再次执行全选")
+                return
+        
         # 为了防止在处理过程中触发选择事件，先关闭选择模式
         self.file_tree.config(selectmode='none')
         
@@ -781,19 +800,42 @@ class FileManagerPanel(SimplePanel):
             if on_complete:
                 on_complete()
             return
+        
+        # 预先检查是否有需要处理的项
+        # 抽样检查最多50个项目，如果没有一个需要处理，则直接完成
+        sample_size = min(50, len(items))
+        needs_processing = False
+        
+        for i in range(sample_size):
+            item_id = items[i]
+            values = list(self.file_tree.item(item_id, "values"))
+            modified, _ = process_func(item_id, values)
+            if modified:
+                needs_processing = True
+                break
+                
+        if not needs_processing and not show_progress:
+            # 快速路径：如果抽样检查表明不需要处理且不显示进度条，直接完成
+            if on_complete:
+                on_complete()
+            return
+           
+        # 运行标志，用于支持取消操作 
+        self._processing_active = True
             
         # 显示进度条
+        progress_window = None
         if show_progress:
             progress_window = tk.Toplevel(self)
             progress_window.title("处理中")
-            progress_window.geometry("300x80")
+            progress_window.geometry("300x100")
             progress_window.resizable(False, False)
             progress_window.transient(self.winfo_toplevel())
             progress_window.grab_set()
             
             # 居中显示
             window_width = 300
-            window_height = 80
+            window_height = 100
             position_x = self.winfo_toplevel().winfo_rootx() + (self.winfo_toplevel().winfo_width() - window_width) // 2
             position_y = self.winfo_toplevel().winfo_rooty() + (self.winfo_toplevel().winfo_height() - window_height) // 2
             progress_window.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
@@ -802,6 +844,17 @@ class FileManagerPanel(SimplePanel):
             ttk.Label(progress_window, text="正在处理文件...").pack(pady=(10, 0))
             progress = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="determinate")
             progress.pack(pady=10, padx=25)
+            
+            # 取消按钮
+            def cancel_processing():
+                self._processing_active = False
+                progress_window.destroy()
+                
+            cancel_button = ttk.Button(progress_window, text="取消", command=cancel_processing)
+            cancel_button.pack(pady=(0, 10))
+            
+            # 处理窗口关闭事件
+            progress_window.protocol("WM_DELETE_WINDOW", cancel_processing)
             
             total_items = len(items)
             processed_items = 0
@@ -817,7 +870,7 @@ class FileManagerPanel(SimplePanel):
         
         # 后台处理函数
         def worker():
-            while not task_queue.empty():
+            while not task_queue.empty() and self._processing_active:
                 try:
                     item_id, values = task_queue.get(block=False)
                     if values and len(values) >= 1:
@@ -835,13 +888,13 @@ class FileManagerPanel(SimplePanel):
         def update_ui_batch():
             batch_count = 0
             try:
-                while batch_count < batch_size and not result_queue.empty():
+                while batch_count < batch_size and not result_queue.empty() and self._processing_active:
                     item_id, result = result_queue.get(block=False)
                     self.file_tree.item(item_id, values=result)
                     result_queue.task_done()
                     batch_count += 1
                     
-                    if show_progress:
+                    if show_progress and progress_window and progress_window.winfo_exists():
                         nonlocal processed_items
                         processed_items += 1
                         progress["value"] = (processed_items / total_items) * 100
@@ -849,25 +902,31 @@ class FileManagerPanel(SimplePanel):
                 pass
                 
             # 如果还有结果，继续处理下一批
-            if not result_queue.empty():
+            if not result_queue.empty() and self._processing_active:
                 self.after(1, update_ui_batch)
             # 如果工作线程还在运行或者结果队列还有数据，继续检查
-            elif not worker_thread.is_alive() and result_queue.empty():
-                if show_progress:
+            elif (not worker_thread.is_alive() and result_queue.empty()) or not self._processing_active:
+                if show_progress and progress_window and progress_window.winfo_exists():
                     progress_window.destroy()
-                if on_complete:
+                if on_complete and self._processing_active:
                     on_complete()
+                # 重置处理标志
+                self._processing_active = False
         
         # 检查是否完成
         def check_completion():
-            if not task_queue.empty():
+            if not task_queue.empty() and self._processing_active:
                 # 任务还未完成，继续等待
                 self.after(50, check_completion)
                 return
                 
             # 开始处理结果并更新UI
-            if not result_queue.empty():
+            if not result_queue.empty() and self._processing_active:
                 update_ui_batch()
+            elif not self._processing_active:
+                # 处理被取消
+                if show_progress and progress_window and progress_window.winfo_exists():
+                    progress_window.destroy()
         
         # 启动工作线程
         worker_thread = threading.Thread(target=worker)
