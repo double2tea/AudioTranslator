@@ -620,12 +620,12 @@ class AudioTranslatorGUI:
         # 插入根分类
         for category in categories:
             # 只显示根分类
-            if not category.parent:
+            if not category.subcategory:
                 # 创建根节点
                 node_id = self.category_tree.insert(
                     "", 
                     "end", 
-                    text=category.name, 
+                    text=category.name_zh, 
                     values=(category.count if hasattr(category, 'count') else 0,)
                 )
                 
