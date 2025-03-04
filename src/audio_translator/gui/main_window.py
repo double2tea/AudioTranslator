@@ -238,6 +238,45 @@ class AudioTranslatorGUI:
         style.configure("Dark.TEntry", fieldbackground=self.COLORS['bg_light'], foreground=self.COLORS['fg'])
         style.configure("Dark.TLabelframe", background=self.COLORS['bg_dark'])
         style.configure("Dark.TLabelframe.Label", background=self.COLORS['bg_dark'], foreground=self.COLORS['fg'])
+        style.configure("Dark.TNotebook", background=self.COLORS['bg_dark'])
+        style.configure("Dark.TNotebook.Tab", background=self.COLORS['bg_accent'], foreground=self.COLORS['fg'])
+        
+        # 服务管理面板特定样式
+        style.configure("Dark.Treeview", 
+            background=self.COLORS['bg_light'],
+            foreground=self.COLORS['fg'],
+            fieldbackground=self.COLORS['bg_light'])
+        style.configure("Dark.Treeview.Heading", 
+            background=self.COLORS['bg_accent'],
+            foreground=self.COLORS['fg'])
+        style.map("Dark.Treeview",
+            background=[('selected', self.COLORS['selected'])],
+            foreground=[('selected', self.COLORS['fg'])])
+        
+        # 复选框和单选按钮样式
+        style.configure("Dark.TCheckbutton", 
+            background=self.COLORS['bg_dark'],
+            foreground=self.COLORS['fg'])
+        style.map("Dark.TCheckbutton",
+            background=[('active', self.COLORS['bg_dark'])],
+            foreground=[('active', self.COLORS['fg'])])
+        
+        style.configure("Dark.TRadiobutton", 
+            background=self.COLORS['bg_dark'],
+            foreground=self.COLORS['fg'])
+        style.map("Dark.TRadiobutton",
+            background=[('active', self.COLORS['bg_dark'])],
+            foreground=[('active', self.COLORS['fg'])])
+        
+        # 下拉列表样式
+        style.configure("Dark.TCombobox", 
+            fieldbackground=self.COLORS['bg_light'],
+            foreground=self.COLORS['fg'],
+            background=self.COLORS['bg_accent'])
+        style.map("Dark.TCombobox",
+            fieldbackground=[('readonly', self.COLORS['bg_light'])],
+            selectbackground=[('readonly', self.COLORS['selected'])],
+            selectforeground=[('readonly', self.COLORS['fg'])])
         
         # 设置根窗口背景色
         self.root.configure(background=self.COLORS['bg_dark'])
@@ -279,12 +318,20 @@ class AudioTranslatorGUI:
         self.service_tab = ttk.Frame(self.notebook, style="Dark.TFrame")
         self.notebook.add(self.service_tab, text="服务管理")
         
-        # 在服务选项卡中添加占位标签
-        ttk.Label(
-            self.service_tab, 
-            text="服务管理功能正在开发中...", 
-            style="Dark.TLabel"
-        ).pack(expand=True, pady=50)
+        # 获取service_manager_service实例
+        service_manager = self.service_factory.get_service("service_manager_service")
+        
+        # 创建ServiceManagerPanel并添加到服务管理标签页
+        if service_manager:
+            self.service_manager_panel = ServiceManagerPanel(self.service_tab, service_manager)
+            self.service_manager_panel.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        else:
+            # 如果服务管理器不可用，显示错误消息
+            ttk.Label(
+                self.service_tab, 
+                text="服务管理功能不可用，请检查配置", 
+                style="Dark.TLabel"
+            ).pack(expand=True, pady=50)
         
         # 创建状态栏
         self._create_status_bar()
@@ -1185,10 +1232,19 @@ class AudioTranslatorGUI:
         
         return category_frame
 
-    def _on_tab_changed(self, event):
-        """当选项卡切换时处理"""
-        # 在这里可以添加选项卡切换后的处理逻辑
-        logger.info("选项卡切换")
+    def _on_tab_changed(self, event=None):
+        """处理标签页切换事件"""
+        # 记录标签页切换
+        current_tab = self.notebook.select()
+        tab_id = self.notebook.index(current_tab)
+        tab_name = self.notebook.tab(tab_id, "text")
+        logger.info(f"选项卡切换: {tab_name}")
+        
+        # 如果切换到服务管理标签页，更新服务列表
+        if tab_name == "服务管理" and hasattr(self, 'service_manager_panel'):
+            # 仅当面板存在时刷新
+            if hasattr(self.service_manager_panel, '_refresh_services'):
+                self.service_manager_panel._refresh_services()
 
     def _on_category_selected(self, event):
         """当分类树中选择某个分类时处理
