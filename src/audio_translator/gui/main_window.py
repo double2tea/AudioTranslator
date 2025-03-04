@@ -1190,6 +1190,27 @@ class AudioTranslatorGUI:
         # 在这里可以添加选项卡切换后的处理逻辑
         logger.info("选项卡切换")
 
+    def _on_category_selected(self, event):
+        """当分类树中选择某个分类时处理
+        
+        Args:
+            event: 事件对象
+        """
+        # 获取选中的分类
+        selected_items = self.category_tree.selection()
+        if not selected_items:
+            return
+        
+        # 获取分类ID和名称
+        category_id = selected_items[0]  # 使用item_id作为分类ID
+        category_name = self.category_tree.item(category_id, "text")
+        
+        # 在这里可以添加选中分类后的处理逻辑，例如过滤文件列表等
+        logger.info(f"选中分类: {category_name} (ID: {category_id})")
+        
+        # 更新状态栏
+        self.status_message.set(f"选中分类: {category_name}")
+        
     def _on_preferences(self):
         """打开首选项对话框"""
         # 临时实现，后续可以添加实际的首选项对话框
