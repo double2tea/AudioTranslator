@@ -178,49 +178,43 @@ class AudioTranslatorGUI:
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # 创建分隔窗格 - 水平分割
-        self.main_paned = ttk.PanedWindow(self.main_frame, orient=tk.HORIZONTAL)
-        self.main_paned.pack(fill=tk.BOTH, expand=True)
-        
-        # 创建左侧面板（文件区域）
-        self.left_frame = ttk.Frame(self.main_paned)
-        self.main_paned.add(self.left_frame, weight=3)
-        
-        # 创建右侧面板（服务配置区域）
-        self.right_frame = ttk.Frame(self.main_paned)
-        self.main_paned.add(self.right_frame, weight=2)
-        
-        # 创建左侧垂直分隔窗格
-        self.left_paned = ttk.PanedWindow(self.left_frame, orient=tk.VERTICAL)
-        self.left_paned.pack(fill=tk.BOTH, expand=True)
-        
         # 创建工具栏
         self._create_toolbar()
         
-        # 创建文件区域
+        # 创建选项卡容器
+        self.notebook = ttk.Notebook(self.main_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        
+        # 创建文件管理标签页
+        self.file_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.file_tab, text="文件管理")
+        
+        # 配置文件标签页
+        self.file_tab.columnconfigure(0, weight=1)
+        self.file_tab.rowconfigure(0, weight=1)  # 文件区域
+        self.file_tab.rowconfigure(1, weight=1)  # 分类区域
+        
+        # 创建文件相关组件
         self._create_file_area()
+        self._create_category_area()
         
-        # 创建右侧分隔窗格 - 垂直分割
-        self.right_paned = ttk.PanedWindow(self.right_frame, orient=tk.VERTICAL)
-        self.right_paned.pack(fill=tk.BOTH, expand=True)
+        # 创建服务管理标签页
+        self.service_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.service_tab, text="服务管理")
         
-        # 获取服务管理服务
-        self.service_manager = self.service_factory.get_service_manager_service()
+        # 配置服务标签页
+        self.service_tab.columnconfigure(0, weight=1)
+        self.service_tab.rowconfigure(0, weight=1)
         
-        if not self.service_manager:
-            logger.error("无法获取服务管理器，服务功能将不可用")
-            messagebox.showerror("初始化错误", "无法获取服务管理器，服务功能将不可用")
-        
-        # 创建服务面板（上面）
-        service_frame = ttk.LabelFrame(self.right_paned, text="服务配置")
-        self.right_paned.add(service_frame, weight=2)
+        # 获取服务管理器实例
+        service_manager = self.service_factory.get_service("service_manager_service")
+        if not service_manager:
+            logger.error("无法获取服务管理器，服务管理面板可能无法正常工作")
+            messagebox.showerror("初始化错误", "无法获取服务管理器，服务管理面板可能无法正常工作")
         
         # 创建服务管理面板
-        self.service_manager_panel = ServiceManagerPanel(service_frame, self.service_manager)
-        self.service_manager_panel.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # 创建分类区域（下面）
-        self._create_category_area()
+        self.service_panel = ServiceManagerPanel(self.service_tab, service_manager)
+        self.service_panel.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         
         # 创建状态栏
         self._create_status_bar()
@@ -228,67 +222,33 @@ class AudioTranslatorGUI:
     def _create_toolbar(self):
         """创建工具栏"""
         # 创建工具栏框架
-        toolbar_frame = ttk.Frame(self.left_paned)
-        self.left_paned.add(toolbar_frame, weight=1)
+        toolbar_frame = ttk.Frame(self.main_frame, padding=5)
+        toolbar_frame.pack(fill=tk.X, side=tk.TOP, pady=(0, 5))
         
-        # 左侧按钮区域
+        # 创建按钮框架
         button_frame = ttk.Frame(toolbar_frame)
-        button_frame.pack(side=tk.LEFT, fill=tk.Y)
+        button_frame.pack(side=tk.LEFT)
         
-        # 添加打开目录按钮
-        self.open_button = ttk.Button(
-            button_frame, 
-            text="打开目录", 
-            command=self._open_directory,
-            style="TButton"
-        )
-        self.open_button.pack(side=tk.LEFT, padx=(0, 5))
+        # 添加按钮
+        ttk.Button(button_frame, text="打开文件夹", command=self._open_directory).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="刷新", command=self._refresh_current_directory).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="分类", command=self._categorize_selected_files).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="自动分类", command=self._auto_categorize_files).pack(side=tk.LEFT, padx=5)
         
-        # 添加刷新按钮
-        self.refresh_button = ttk.Button(
-            button_frame, 
-            text="刷新", 
-            command=self._refresh_current_directory,
-            style="TButton"
-        )
-        self.refresh_button.pack(side=tk.LEFT, padx=5)
-        
-        # 添加分类按钮
-        self.categorize_button = ttk.Button(
-            button_frame, 
-            text="手动分类", 
-            command=self._categorize_selected_files,
-            style="TButton"
-        )
-        self.categorize_button.pack(side=tk.LEFT, padx=5)
-        
-        # 添加自动分类按钮
-        self.auto_categorize_button = ttk.Button(
-            button_frame, 
-            text="自动分类", 
-            command=self._auto_categorize_files,
-            style="TButton"
-        )
-        self.auto_categorize_button.pack(side=tk.LEFT, padx=5)
-        
-        # 右侧搜索和过滤区域
-        filter_frame = ttk.Frame(toolbar_frame)
-        filter_frame.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # 添加搜索框
-        ttk.Label(filter_frame, text="搜索:").pack(side=tk.LEFT, padx=(0, 5))
+        # 添加搜索标签
+        ttk.Label(toolbar_frame, text="搜索:").pack(side=tk.LEFT, padx=(15, 5))
         
         self.search_var = tk.StringVar()
         self.search_var.trace("w", self._on_search_change)
-        self.search_entry = ttk.Entry(filter_frame, textvariable=self.search_var, width=15)
+        self.search_entry = ttk.Entry(toolbar_frame, textvariable=self.search_var, width=15)
         self.search_entry.pack(side=tk.LEFT, padx=(0, 10))
         
         # 添加状态过滤器
-        ttk.Label(filter_frame, text="状态:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(toolbar_frame, text="状态:").pack(side=tk.LEFT, padx=(0, 5))
         
         self.status_filter_var = tk.StringVar(value="全部")
         status_filter = ttk.Combobox(
-            filter_frame, 
+            toolbar_frame, 
             textvariable=self.status_filter_var,
             values=["全部", "未处理", "处理中", "已完成", "已分类", "已删除"],
             width=10,
@@ -299,50 +259,41 @@ class AudioTranslatorGUI:
     
     def _create_file_area(self):
         """创建文件区域"""
-        # 创建目录区域框架
-        dir_frame = ttk.Frame(self.left_paned)
-        self.left_paned.add(dir_frame, weight=1)
+        # 创建文件区域容器框架
+        file_area_frame = ttk.LabelFrame(self.file_tab, text="文件列表")
+        file_area_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # 当前目录标签
+        # 配置容器框架
+        file_area_frame.columnconfigure(0, weight=1)
+        file_area_frame.rowconfigure(0, weight=0)  # 目录区域
+        file_area_frame.rowconfigure(1, weight=1)  # 文件树
+        
+        # 创建目录区域
+        dir_frame = ttk.Frame(file_area_frame, padding=5)
+        dir_frame.grid(row=0, column=0, sticky="ew")
+        
+        # 添加当前目录标签和输入框
         ttk.Label(dir_frame, text="当前目录:").pack(side=tk.LEFT, padx=(0, 5))
-        
-        # 当前目录显示框
         dir_entry = ttk.Entry(dir_frame, textvariable=self.current_directory, width=50)
-        dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         
-        # 浏览按钮
-        ttk.Button(
-            dir_frame, 
-            text="浏览...", 
-            command=self._open_directory,
-            style="TButton",
-            width=8
-        ).pack(side=tk.LEFT, padx=(5, 0))
+        # 添加浏览按钮
+        ttk.Button(dir_frame, text="浏览", command=self._open_directory).pack(side=tk.LEFT)
         
-        # 创建文件树
-        self._create_file_tree()
-    
-    def _create_file_tree(self):
-        """创建文件树控件"""
-        # 创建文件树区域
-        file_frame = ttk.Frame(self.left_paned)
-        self.left_paned.add(file_frame, weight=3)
+        # 创建文件树框架
+        tree_frame = ttk.Frame(file_area_frame)
+        tree_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         
-        # 创建水平和垂直滚动条
-        scroll_frame = ttk.Frame(file_frame)
-        scroll_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # 垂直滚动条
-        y_scrollbar = ttk.Scrollbar(scroll_frame, orient=tk.VERTICAL)
+        # 创建滚动条
+        y_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
         y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # 水平滚动条
-        x_scrollbar = ttk.Scrollbar(scroll_frame, orient=tk.HORIZONTAL)
+        x_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL)
         x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
         
-        # 创建树形视图
+        # 创建文件树
         self.file_tree = ttk.Treeview(
-            scroll_frame,
+            tree_frame,
             columns=("size", "type", "status"),
             yscrollcommand=y_scrollbar.set,
             xscrollcommand=x_scrollbar.set,
@@ -388,17 +339,25 @@ class AudioTranslatorGUI:
         self.file_context_menu.add_command(label="自动分类", command=self._auto_categorize_files)
     
     def _on_file_selected(self, event):
-        """文件选择事件处理
+        """处理文件选择事件
         
         Args:
             event: 事件对象
         """
-        # 获取选中的文件
         selected_items = self.file_tree.selection()
+        selected_files = []
         
-        # 设置选中文件
-        selected_files = [self.file_tree.item(item, "text") for item in selected_items]
+        # 获取选中文件的路径
+        for item in selected_items:
+            if item:
+                file_path = self.file_tree.item(item, "tags")[0]
+                selected_files.append(file_path)
+        
+        # 更新文件管理器中的选中文件
         self.file_manager.set_selected_files(selected_files)
+        
+        # 更新本地选中文件列表
+        self.selected_files = selected_files
         
         # 更新状态栏
         self._update_status_bar()
@@ -526,154 +485,18 @@ class AudioTranslatorGUI:
         # 更新状态栏
         self._update_status_bar()
     
-    def _create_category_area(self):
-        """创建分类区域"""
-        # 创建分类区域框架
-        category_frame = ttk.LabelFrame(self.right_paned, text="分类管理")
-        self.right_paned.add(category_frame, weight=1)
-        
-        # 创建分类框架的内容
-        content_frame = ttk.Frame(category_frame, padding=5)
-        content_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 创建分类选项区域
-        options_frame = ttk.Frame(content_frame)
-        options_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # 使用子分类选项
-        ttk.Label(options_frame, text="使用子分类:").pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Checkbutton(
-            options_frame,
-            variable=self.category_manager.get_use_subcategory_var()
-        ).pack(side=tk.LEFT)
-        
-        # 创建分类树
-        tree_frame = ttk.Frame(content_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 分类列表标签
-        ttk.Label(tree_frame, text="可用分类:", style="Title.TLabel").pack(anchor=tk.W, pady=(0, 5))
-        
-        # 创建分类树滚动区域
-        scrollbar = ttk.Scrollbar(tree_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # 创建分类树
-        self.category_tree = ttk.Treeview(
-            tree_frame,
-            columns=("count"),
-            yscrollcommand=scrollbar.set,
-            selectmode="browse",
-            height=10
-        )
-        self.category_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # 配置滚动条
-        scrollbar.config(command=self.category_tree.yview)
-        
-        # 设置列
-        self.category_tree.column("#0", width=300, stretch=tk.YES)
-        self.category_tree.column("count", width=50, anchor=tk.CENTER)
-        
-        self.category_tree.heading("#0", text="分类名称")
-        self.category_tree.heading("count", text="文件数")
-        
-        # 创建分类操作按钮
-        button_frame = ttk.Frame(content_frame)
-        button_frame.pack(fill=tk.X, pady=(10, 0))
-        
-        ttk.Button(
-            button_frame,
-            text="手动分类选中文件",
-            command=self._categorize_selected_files
-        ).pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Button(
-            button_frame,
-            text="自动分类选中文件",
-            command=self._auto_categorize_files
-        ).pack(side=tk.LEFT, padx=5)
-        
-        # 显示分类统计信息
-        stats_frame = ttk.Frame(content_frame)
-        stats_frame.pack(fill=tk.X, pady=(10, 0))
-        
-        ttk.Label(stats_frame, text="分类统计:").pack(side=tk.LEFT)
-        self.category_stats_label = ttk.Label(stats_frame, text="共0个分类")
-        self.category_stats_label.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # 填充分类树
-        self._populate_category_tree()
-    
-    def _populate_category_tree(self):
-        """填充分类树"""
-        # 清空分类树
-        for item in self.category_tree.get_children():
-            self.category_tree.delete(item)
-        
-        # 获取分类列表
-        categories = list(self.category_manager.categories.values())
-        
-        # 按字母顺序排序
-        categories.sort(key=lambda x: x.name_zh.lower())
-        
-        # 插入根分类
-        for category in categories:
-            # 只显示根分类
-            if not category.subcategory:
-                # 创建根节点
-                node_id = self.category_tree.insert(
-                    "", 
-                    "end", 
-                    text=category.name_zh, 
-                    values=(category.count if hasattr(category, 'count') else 0,)
-                )
-                
-                # 递归添加子分类
-                self._add_subcategories(category.cat_id, node_id)
-        
-        # 更新统计信息
-        self.category_stats_label.config(text=f"共{len(categories)}个分类")
-    
-    def _add_subcategories(self, parent_id, tree_parent):
-        """递归添加子分类
-        
-        Args:
-            parent_id: 父分类ID
-            tree_parent: 树中的父节点ID
-        """
-        # 获取子分类
-        subcategories = self.category_manager.get_subcategories(parent_id)
-        
-        # 按字母顺序排序
-        subcategories.sort(key=lambda x: x.name_zh.lower())
-        
-        # 添加子分类
-        for subcategory in subcategories:
-            # 创建节点
-            node_id = self.category_tree.insert(
-                tree_parent, 
-                "end", 
-                text=subcategory.name, 
-                values=(subcategory.count if hasattr(subcategory, 'count') else 0,)
-            )
-            
-            # 递归添加子分类的子分类
-            self._add_subcategories(subcategory.cat_id, node_id)
-    
     def _create_status_bar(self):
         """创建状态栏"""
-        # 创建状态栏框架
-        status_bar = ttk.Frame(self.main_frame, relief="sunken", border=1)
+        status_bar = ttk.Frame(self.main_frame, relief=tk.SUNKEN, style="Status.TFrame")
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
         
-        # 创建左侧状态消息
-        status_left = ttk.Label(status_bar, textvariable=self.status_message, style="Status.TLabel")
-        status_left.pack(side=tk.LEFT, padx=5, pady=2)
+        # 添加状态消息标签
+        status_label = ttk.Label(status_bar, textvariable=self.status_message, style="Status.TLabel")
+        status_label.pack(side=tk.LEFT, padx=5, pady=2)
         
-        # 添加版本信息
-        status_right = ttk.Label(status_bar, text="v1.0.0", style="Status.TLabel")
-        status_right.pack(side=tk.RIGHT, padx=5, pady=2)
+        # 添加版本信息标签
+        version_label = ttk.Label(status_bar, text="v1.0.0", style="Status.TLabel")
+        version_label.pack(side=tk.RIGHT, padx=5, pady=2)
     
     def _bind_events(self):
         """绑定事件处理函数"""
@@ -761,81 +584,104 @@ class AudioTranslatorGUI:
             self.root.update_idletasks()
             
         # 定义完成回调函数
-        def done_callback(result):
-            if result.get('success', False):
-                # 刷新文件树
+        def done_callback(files):
+            try:
+                # 文件已经被加载到FileManager中，直接刷新文件树UI
                 self._refresh_file_tree()
+                
                 # 更新状态
-                self.status_message.set(f"已加载 {len(self.file_manager.get_files())} 个文件")
-            else:
+                total_files = len(files) if isinstance(files, list) else len(self.file_manager.get_files())
+                self.status_message.set(f"已加载 {total_files} 个文件")
+                
+                # 记录日志
+                logger.info(f"已加载目录: {directory}, 共 {total_files} 个文件")
+            except Exception as e:
                 # 显示错误信息
-                error = result.get('error', '未知错误')
-                self.status_message.set(f"加载文件失败: {error}")
-                messagebox.showerror("加载错误", f"加载文件失败: {error}")
+                logger.error(f"加载文件回调错误: {e}")
+                self.status_message.set(f"加载文件失败: {str(e)}")
+                messagebox.showerror("加载错误", f"加载文件失败: {str(e)}")
         
         # 异步加载文件
         self.file_manager.load_directory(
             directory, 
-            progress_callback=progress_callback, 
-            done_callback=done_callback
+            callback=done_callback
         )
     
     def _refresh_file_tree(self):
         """刷新文件树显示"""
         # 保存当前选中的文件
         selected_items = self.file_tree.selection()
-        selected_files = [self.file_tree.item(item, "text") for item in selected_items]
+        selected_iids = {}
+        
+        # 保存选中的文件路径作为标识符
+        for item in selected_items:
+            file_path = self.file_tree.item(item, "tags")[0] if self.file_tree.item(item, "tags") else None
+            if file_path:
+                selected_iids[file_path] = True
         
         # 清空文件树
         for item in self.file_tree.get_children():
             self.file_tree.delete(item)
-            
-        # 获取文件列表
+        
+        # 获取文件列表 - 格式为: [(name, size_str, file_type, status, file_path), ...]
         files = self.file_manager.get_files()
         
-        # 根据排序键进行排序
-        sorted_files = []
-        for file_name, file_info in files.items():
-            sorted_files.append((file_name, file_info))
+        # 应用排序
+        if hasattr(self.file_manager, 'sorting_key') and hasattr(self.file_manager, 'sorting_reverse'):
+            reverse = self.file_manager.sorting_reverse
             
-        # 根据排序键和排序方向进行排序
-        if self.file_manager.sorting_key == 'name':
-            sorted_files.sort(key=lambda x: x[0].lower(), reverse=self.file_manager.sorting_reverse)
-        elif self.file_manager.sorting_key == 'size':
-            sorted_files.sort(key=lambda x: x[1].get('size', 0), reverse=self.file_manager.sorting_reverse)
-        elif self.file_manager.sorting_key == 'type':
-            sorted_files.sort(key=lambda x: x[1].get('extension', '').lower(), reverse=self.file_manager.sorting_reverse)
-        elif self.file_manager.sorting_key == 'status':
-            sorted_files.sort(key=lambda x: x[1].get('status', '').lower(), reverse=self.file_manager.sorting_reverse)
-            
+            if self.file_manager.sorting_key == 'name':
+                sorted_files = sorted(files, key=lambda x: x[0].lower(), reverse=reverse)
+            elif self.file_manager.sorting_key == 'size':
+                # 尝试将大小字符串转换为字节数进行排序
+                def size_to_bytes(size_str):
+                    try:
+                        if 'KB' in size_str:
+                            return float(size_str.replace('KB', '').strip()) * 1024
+                        elif 'MB' in size_str:
+                            return float(size_str.replace('MB', '').strip()) * 1024 * 1024
+                        elif 'GB' in size_str:
+                            return float(size_str.replace('GB', '').strip()) * 1024 * 1024 * 1024
+                        else:
+                            return float(size_str.replace('B', '').strip())
+                    except:
+                        return 0
+                
+                sorted_files = sorted(files, key=lambda x: size_to_bytes(x[1]), reverse=reverse)
+            elif self.file_manager.sorting_key == 'type':
+                sorted_files = sorted(files, key=lambda x: x[2].lower(), reverse=reverse)
+            elif self.file_manager.sorting_key == 'status':
+                sorted_files = sorted(files, key=lambda x: x[3].lower(), reverse=reverse)
+            else:
+                sorted_files = files
+        else:
+            sorted_files = files
+        
         # 填充文件树
-        for file_name, file_info in sorted_files:
+        for name, size_str, file_type, status, file_path in sorted_files:
             # 应用搜索过滤器
             search_text = self.search_var.get().lower()
-            if search_text and search_text not in file_name.lower():
+            if search_text and search_text not in name.lower():
                 continue
-                
+            
             # 应用状态过滤器
             status_filter = self.status_filter_var.get()
-            if status_filter != "全部" and file_info.get('status') != status_filter:
+            if status_filter != "全部" and status != status_filter:
                 continue
-                
+            
             # 添加文件到树
             item_id = self.file_tree.insert(
                 "", 
                 "end", 
-                text=file_name, 
-                values=(
-                    file_info.get('formatted_size', '未知'),
-                    file_info.get('extension', '未知'),
-                    file_info.get('status', '未处理')
-                )
+                text=name, 
+                values=(size_str, file_type, status),
+                tags=(file_path,)
             )
             
             # 恢复选中状态
-            if file_name in selected_files:
+            if file_path in selected_iids:
                 self.file_tree.selection_add(item_id)
-                
+        
         # 更新状态栏
         self._update_status_bar()
     
@@ -878,7 +724,6 @@ class AudioTranslatorGUI:
         
         # 工具菜单
         self.tools_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.tools_menu.add_command(label="API密钥管理", command=self._on_api_key_manager)
         self.tools_menu.add_command(label="模型管理", command=self._on_model_manager)
         
         # 添加菜单到菜单栏
@@ -889,33 +734,14 @@ class AudioTranslatorGUI:
         # 设置菜单栏
         self.root.config(menu=self.menu_bar)
 
-    def _on_api_key_manager(self):
-        """打开API密钥管理对话框"""
-        from .dialogs.api_key_manager import APIKeyManagerDialog
-        
-        # 获取服务管理器
-        service_manager = self.service_factory.get_service("service_manager_service")
-        if not service_manager:
-            messagebox.showerror("错误", "无法获取服务管理器")
-            return
-            
-        dialog = APIKeyManagerDialog(self.root, service_manager)
-        self.root.wait_window(dialog)
-        
     def _on_model_manager(self):
         """打开模型管理对话框"""
         try:
             from .dialogs.model_manager_dialog import ModelManagerDialog
             
             # 获取服务管理器和配置服务
-            service_manager = None
-            config_service = None
-            
-            if hasattr(self, 'service_manager'):
-                service_manager = self.service_manager
-            
-            if hasattr(self, 'config_service'):
-                config_service = self.config_service
+            service_manager = self.service_factory.get_service("service_manager_service")
+            config_service = self.service_factory.get_service("config_service")
             
             if not service_manager or not config_service:
                 messagebox.showerror("错误", "无法获取服务管理器或配置服务")
@@ -1022,4 +848,139 @@ class AudioTranslatorGUI:
             self._populate_category_tree()
             
             # 显示成功消息
-            messagebox.showinfo("自动分类", f"成功完成 {len(selected_files)} 个文件的自动分类") 
+            messagebox.showinfo("自动分类", f"成功完成 {len(selected_files)} 个文件的自动分类")
+
+    def _populate_category_tree(self):
+        """填充分类树"""
+        # 清空分类树
+        for item in self.category_tree.get_children():
+            self.category_tree.delete(item)
+        
+        # 获取分类列表
+        categories = list(self.category_manager.categories.values())
+        
+        # 按字母顺序排序
+        categories.sort(key=lambda x: x.name_zh.lower())
+        
+        # 插入根分类
+        for category in categories:
+            # 只显示根分类
+            if not category.subcategory:
+                # 创建根节点
+                node_id = self.category_tree.insert(
+                    "", 
+                    "end", 
+                    text=category.name_zh, 
+                    values=(category.count if hasattr(category, 'count') else 0,)
+                )
+                
+                # 递归添加子分类
+                self._add_subcategories(category.cat_id, node_id)
+        
+        # 更新统计信息
+        self.category_stats_label.config(text=f"共{len(categories)}个分类")
+    
+    def _add_subcategories(self, parent_id, tree_parent):
+        """递归添加子分类
+        
+        Args:
+            parent_id: 父分类ID
+            tree_parent: 树中的父节点ID
+        """
+        # 获取子分类
+        subcategories = self.category_manager.get_subcategories(parent_id)
+        
+        # 按字母顺序排序
+        subcategories.sort(key=lambda x: x.name_zh.lower())
+        
+        # 添加子分类
+        for subcategory in subcategories:
+            # 创建节点
+            node_id = self.category_tree.insert(
+                tree_parent, 
+                "end", 
+                text=subcategory.name, 
+                values=(subcategory.count if hasattr(subcategory, 'count') else 0,)
+            )
+            
+            # 递归添加子分类的子分类
+            self._add_subcategories(subcategory.cat_id, node_id)
+
+    def _create_category_area(self):
+        """创建分类区域"""
+        # 创建分类区域框架
+        category_frame = ttk.LabelFrame(self.file_tab, text="分类管理")
+        category_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # 创建分类框架的内容
+        content_frame = ttk.Frame(category_frame, padding=5)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 创建分类选项区域
+        options_frame = ttk.Frame(content_frame)
+        options_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 使用子分类选项
+        ttk.Label(options_frame, text="使用子分类:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Checkbutton(
+            options_frame,
+            variable=self.category_manager.get_use_subcategory_var()
+        ).pack(side=tk.LEFT)
+        
+        # 创建分类树
+        tree_frame = ttk.Frame(content_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 分类列表标签
+        ttk.Label(tree_frame, text="可用分类:", style="Title.TLabel").pack(anchor=tk.W, pady=(0, 5))
+        
+        # 创建分类树滚动区域
+        scrollbar = ttk.Scrollbar(tree_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 创建分类树
+        self.category_tree = ttk.Treeview(
+            tree_frame,
+            columns=("count"),
+            yscrollcommand=scrollbar.set,
+            selectmode="browse",
+            height=10
+        )
+        self.category_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # 配置滚动条
+        scrollbar.config(command=self.category_tree.yview)
+        
+        # 设置列
+        self.category_tree.column("#0", width=300, stretch=tk.YES)
+        self.category_tree.column("count", width=50, anchor=tk.CENTER)
+        
+        self.category_tree.heading("#0", text="分类名称")
+        self.category_tree.heading("count", text="文件数")
+        
+        # 创建分类操作按钮
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Button(
+            button_frame,
+            text="手动分类选中文件",
+            command=self._categorize_selected_files
+        ).pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(
+            button_frame,
+            text="自动分类选中文件",
+            command=self._auto_categorize_files
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # 显示分类统计信息
+        stats_frame = ttk.Frame(content_frame)
+        stats_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Label(stats_frame, text="分类统计:").pack(side=tk.LEFT)
+        self.category_stats_label = ttk.Label(stats_frame, text="共0个分类")
+        self.category_stats_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 填充分类树
+        self._populate_category_tree() 
