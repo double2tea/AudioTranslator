@@ -665,19 +665,15 @@ class AudioTranslatorGUI:
         """创建状态栏"""
         # 创建状态栏框架
         status_bar = ttk.Frame(self.main_frame, relief="sunken", border=1)
-        status_bar.grid(row=2, column=0, sticky="ew")
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
         
-        # 配置状态栏网格
-        status_bar.columnconfigure(0, weight=1)
-        status_bar.columnconfigure(1, weight=0)
-        
-        # 添加状态消息
-        ttk.Label(status_bar, textvariable=self.status_message, 
-                 style="Status.TLabel").grid(row=0, column=0, sticky="w", padx=5, pady=2)
+        # 创建左侧状态消息
+        status_left = ttk.Label(status_bar, textvariable=self.status_message, style="Status.TLabel")
+        status_left.pack(side=tk.LEFT, padx=5, pady=2)
         
         # 添加版本信息
-        ttk.Label(status_bar, text="v1.0.0", 
-                 style="Status.TLabel").grid(row=0, column=1, sticky="e", padx=5, pady=2)
+        status_right = ttk.Label(status_bar, text="v1.0.0", style="Status.TLabel")
+        status_right.pack(side=tk.RIGHT, padx=5, pady=2)
     
     def _bind_events(self):
         """绑定事件处理函数"""
