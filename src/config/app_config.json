@@ -1,0 +1,43 @@
+{
+  "app": {
+    "name": "音频文件翻译器",
+    "version": "1.0.0",
+    "language": "zh_CN",
+    "theme": "system",
+    "debug": false,
+    "first_run": true
+  },
+  "directories": {
+    "last_open": "",
+    "favorites": [],
+    "recent": []
+  },
+  "ui": {
+    "window_width": 1200,
+    "window_height": 800,
+    "sidebar_width": 300,
+    "show_toolbar": true,
+    "show_statusbar": true
+  },
+  "audio": {
+    "player": "system",
+    "volume": 75,
+    "autoplay": false
+  },
+  "file_types": {
+    "audio": [
+      ".mp3",
+      ".wav",
+      ".ogg",
+      ".flac",
+      ".aac",
+      ".m4a"
+    ],
+    "text": [
+      ".txt",
+      ".md",
+      ".csv",
+      ".json"
+    ]
+  }
+}

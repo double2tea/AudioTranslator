@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "project": {
+    "name": "Audio Translator",
+    "description": "音频文件翻译器应用程序，支持音频处理、分类和AI翻译功能"
+  },
+  "language": {
+    "primary": "python",
+    "version": "3.8+"
+  },
+  "codegeneration": {
+    "indentSize": 4,
+    "quoteStyle": "single",
+    "docStyle": "google",
+    "preferredImportStyle": "absolute"
+  },
+  "include": [
+    "src/**/*.py",
+    "tests/**/*.py",
+    "*.py",
+    "*.md",
+    "*.json"
+  ],
+  "exclude": [
+    "**/__pycache__/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/.git/**",
+    "**/.pytest_cache/**",
+    "**/node_modules/**"
+  ],
+  "suggestions": {
+    "enabled": true,
+    "ignoreComments": false,
+    "style": {
+      "enforceLineLength": 88,
+      "enforceDocstrings": true
+    }
+  },
+  "dependencies": {
+    "imports": {
+      "tkinter": "import tkinter as tk",
+      "openai": "from openai import OpenAI",
+      "anthropic": "from anthropic import Anthropic",
+      "gemini": "import google.generativeai as genai"
+    }
+  },
+  "moduleStructure": {
+    "services": {
+      "core": ["BaseService", "ServiceFactory", "ServiceManagerService"],
+      "api": ["ModelService", "OpenAIService", "AnthropicService", "GeminiService"],
+      "infrastructure": ["FileService", "ConfigService"],
+      "business": ["AudioService", "TranslatorService", "CategoryService", "ThemeService", "UCSService"]
+    }
+  },
+  "fileTemplates": {
+    "service": {
+      "path": "src/audio_translator/services/{layer}/{name}_service.py",
+      "content": "from typing import Dict, Any, Optional\n\nfrom ..core.base_service import BaseService\n\nclass {ServiceName}Service(BaseService):\n    \"\"\"Service for {description}\"\"\"\n\n    def __init__(self, config: Optional[Dict[str, Any]] = None):\n        super().__init__(config)\n        self.name = '{name}_service'\n\n    def initialize(self) -> bool:\n        \"\"\"Initialize the service\"\"\"\n        return True\n\n    def shutdown(self) -> bool:\n        \"\"\"Shutdown the service\"\"\"\n        return True\n"
+    },
+    "modelService": {
+      "path": "src/audio_translator/services/api/providers/{name}/{name}_service.py",
+      "content": "from typing import Dict, List, Any\nfrom ...model_service import ModelService\n\nclass {ServiceName}Service(ModelService):\n    \"\"\"Service implementation for {name}\"\"\"\n\n    def __init__(self, config: Dict):\n        super().__init__(config)\n        self.name = config.get('name', '{ServiceName}')\n        self.type = '{name}'\n\n    def test_connection(self) -> Dict[str, Any]:\n        \"\"\"Test connection to the service\"\"\"\n        try:\n            # Test connection logic\n            return {'status': 'success', 'message': '连接成功'}\n        except Exception as e:\n            return {'status': 'error', 'message': str(e)}\n\n    def list_models(self) -> List[str]:\n        \"\"\"List available models\"\"\"\n        return []\n\n    def chat_completion(self, messages: List[Dict], model: str = None) -> Dict:\n        \"\"\"Generate chat completion\"\"\"\n        pass\n"
+    }
+  },
+  "completionRules": {
+    "enforceTypes": true,
+    "enforceErrorHandling": true,
+    "enforceDocstrings": true
+  },
+  "assistantRules": {
+    "role": "专业Python工程师",
+    "goals": [
+      "以用户易懂的方式解释技术概念",
+      "主动完成任务而非等待多次提示",
+      "创建模块化、可维护的代码"
+    ],
+    "workflow": {
+      "projectInit": [
+        "理解README文档和项目架构",
+        "确保文档完整并易于理解"
+      ],
+      "requirementAnalysis": [
+        "站在用户角度思考",
+        "分析并完善需求",
+        "选择最简单的解决方案"
+      ],
+      "codeDevelopment": [
+        "遵循PEP 8代码风格",
+        "使用现代Python语法和特性",
+        "采用面向对象和函数式编程范式",
+        "实现模块化设计",
+        "使用类型提示增强代码质量",
+        "编写详细文档和注释",
+        "实现适当的错误处理和日志",
+        "编写单元测试"
+      ],
+      "problemSolving": [
+        "全面理解相关代码",
+        "分析错误原因",
+        "根据反馈调整方案"
+      ],
+      "projectCompletion": [
+        "反思完成步骤",
+        "提出改进建议",
+        "更新文档",
+        "优化性能和效率"
+      ]
+    },
+    "references": [
+      "https://docs.python.org/"
+    ]
+  }
+}

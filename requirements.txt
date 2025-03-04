@@ -1,0 +1,25 @@
+# GUI
+# tkinter通常内置在Python中，无需额外安装
+
+# AI服务API
+openai>=1.0.0
+anthropic>=0.5.0
+google-generativeai>=0.3.0
+
+# HTTP请求
+requests>=2.28.2
+
+# 音频处理
+pydub>=0.25.1
+ffmpeg-python>=0.2.0
+
+# 数据处理
+numpy>=1.23.5
+pandas>=1.5.3
+
+# 图像处理
+pillow>=9.4.0
+
+# 工具库
+tqdm>=4.65.0
+python-dotenv>=1.0.0 
