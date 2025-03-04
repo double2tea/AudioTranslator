@@ -17,6 +17,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Dict, Any, Optional, List, Tuple, Union, Callable
 from pathlib import Path
+import threading
+import queue
 
 from ...managers.file_manager import FileManager
 from ...utils.ui_utils import create_tooltip, ScrollableFrame
@@ -609,103 +611,271 @@ class FileManagerPanel(SimplePanel):
     
     def _select_all_files(self) -> None:
         """选择所有文件"""
-        # 获取所有项目ID
         all_items = self.file_tree.get_children()
         
-        # 清空当前选择并重置列表
-        self.selected_files = []
+        if not all_items:
+            return
+            
+        # 为了防止在处理过程中触发选择事件，先关闭选择模式
+        self.file_tree.config(selectmode='none')
         
-        # 选择所有可见项
-        self.file_tree.selection_set(all_items)
+        # 定义处理函数
+        def process_item(item_id, values):
+            # 更新选择标记
+            if len(values) >= 1:
+                # 如果已经选中，不需要修改
+                if values[0] == "✓":
+                    return False, values
+                
+                values[0] = "✓"  # 更新选择标记
+                return True, values
+            return False, values
         
-        # 更新选择标记和收集文件路径
+        # 收集文件路径
+        new_selected_files = []
         for item_id in all_items:
             values = list(self.file_tree.item(item_id, "values"))
-            if values and len(values) >= 6:
+            if len(values) >= 6:
                 file_path = values[5]
-                values[0] = "✓"  # 更新选择标记
-                
-                # 更新树项的值
-                self.file_tree.item(item_id, values=values)
-                
-                if file_path and file_path not in self.selected_files:
-                    self.selected_files.append(file_path)
+                if file_path and file_path not in new_selected_files:
+                    new_selected_files.append(file_path)
         
-        # 更新UI状态
-        self._update_ui_state()
-        self._update_status_bar()
-    
+        # 定义完成回调
+        def on_complete():
+            # 恢复选择模式
+            self.file_tree.config(selectmode='extended')
+            # 全选所有项
+            self.file_tree.selection_add(*all_items)
+            # 更新选中文件列表
+            self.selected_files = new_selected_files
+            # 更新UI状态
+            self._update_ui_state()
+            self._update_status_bar()
+        
+        # 异步处理所有项
+        self._process_items_async(
+            all_items,
+            process_item,
+            on_complete,
+            batch_size=100,
+            show_progress=(len(all_items) > 200)  # 只有项目数大于200时才显示进度条
+        )
+
     def _invert_selection(self) -> None:
         """反转选择状态"""
-        # 获取所有项和当前选中的项
         all_items = self.file_tree.get_children()
         selected_items = set(self.file_tree.selection())
         
-        # 准备批量更新
-        items_to_select = []
-        items_with_new_values = []
-        new_selected_files = []
-        
-        # 关闭树视图重绘以提高性能
+        if not all_items:
+            return
+            
+        # 为了防止在处理过程中触发选择事件，先关闭选择模式
         self.file_tree.config(selectmode='none')
         
         # 清空当前选择，避免触发选择事件
         self.file_tree.selection_remove(*all_items)
         
-        # 处理所有项
+        # 要选择的项目列表
+        items_to_select = []
+        new_selected_files = []
+        
+        # 预先收集要选择的项目
         for item_id in all_items:
-            values = list(self.file_tree.item(item_id, "values"))
-            if len(values) >= 6:
-                file_path = values[5]
-                
-                # 反转选择状态
-                if item_id not in selected_items:
-                    items_to_select.append(item_id)
-                    values[0] = "✓"  # 更新选择标记
-                    if file_path:
+            if item_id not in selected_items:
+                items_to_select.append(item_id)
+                values = self.file_tree.item(item_id, "values")
+                if len(values) >= 6:
+                    file_path = values[5]
+                    if file_path and file_path not in new_selected_files:
                         new_selected_files.append(file_path)
+        
+        # 定义处理函数
+        def process_item(item_id, values):
+            if len(values) >= 1:
+                # 如果在之前选中的项目中，清除选择标记
+                if item_id in selected_items:
+                    values[0] = ""
                 else:
-                    values[0] = ""  # 清除选择标记
-                
-                # 收集需要更新的项
-                items_with_new_values.append((item_id, values))
+                    values[0] = "✓"
+                return True, values
+            return False, values
         
-        # 批量更新树项值
-        for item_id, values in items_with_new_values:
-            self.file_tree.item(item_id, values=values)
+        # 定义完成回调
+        def on_complete():
+            # 恢复选择模式
+            self.file_tree.config(selectmode='extended')
+            # 选择应该选中的项目
+            if items_to_select:
+                self.file_tree.selection_add(*items_to_select)
+            # 更新选中文件列表
+            self.selected_files = new_selected_files
+            # 更新UI状态
+            self._update_ui_state()
+            self._update_status_bar()
         
-        # 批量应用选择
-        if items_to_select:
-            self.file_tree.selection_add(*items_to_select)
-        
-        # 恢复树视图的选择模式
-        self.file_tree.config(selectmode='extended')
-        
-        # 更新选择列表
-        self.selected_files = new_selected_files
-        
-        # 一次性更新UI状态
-        self._update_ui_state()
-        self._update_status_bar()
+        # 异步处理所有项
+        self._process_items_async(
+            all_items,
+            process_item,
+            on_complete,
+            batch_size=100,
+            show_progress=(len(all_items) > 200)  # 只有项目数大于200时才显示进度条
+        )
     
     def _deselect_all(self) -> None:
         """取消所有选择"""
-        # 清空树视图选择
-        for item_id in self.file_tree.selection():
-            self.file_tree.selection_remove(item_id)
+        selected_items = list(self.file_tree.selection())
+        
+        if not selected_items:
+            return
             
+        # 为了防止在处理过程中触发选择事件，先关闭选择模式
+        self.file_tree.config(selectmode='none')
+        
+        # 定义处理函数
+        def process_item(item_id, values):
             # 清除选择标记
-            values = list(self.file_tree.item(item_id, "values"))
             if len(values) >= 1:
                 values[0] = ""
-                self.file_tree.item(item_id, values=values)
+                return True, values
+            return False, values
+            
+        # 定义完成回调
+        def on_complete():
+            # 恢复选择模式
+            self.file_tree.config(selectmode='extended')
+            # 清空当前选择
+            self.file_tree.selection_remove(*selected_items)
+            # 清空选中文件列表
+            self.selected_files = []
+            # 更新UI状态
+            self._update_ui_state()
+            self._update_status_bar()
+            
+        # 异步处理所有选中项
+        self._process_items_async(
+            selected_items,
+            process_item,
+            on_complete,
+            batch_size=100,
+            show_progress=(len(selected_items) > 200)  # 只有项目数大于200时才显示进度条
+        )
+
+    def _process_items_async(self, 
+                          items: List, 
+                          process_func: Callable[[str, List], Tuple[bool, Any]], 
+                          on_complete: Callable[[], None] = None,
+                          batch_size: int = 50,
+                          show_progress: bool = True) -> None:
+        """
+        异步处理树视图中的项目，批量更新以避免UI卡顿
         
-        # 清空选中文件列表
-        self.selected_files = []
+        Args:
+            items: 要处理的项目ID列表
+            process_func: 处理函数，接收项目ID和当前值，返回(是否修改,新值)元组
+            on_complete: 处理完成后的回调函数
+            batch_size: 每批处理的项目数量
+            show_progress: 是否显示进度条
+        """
+        if not items:
+            if on_complete:
+                on_complete()
+            return
+            
+        # 显示进度条
+        if show_progress:
+            progress_window = tk.Toplevel(self)
+            progress_window.title("处理中")
+            progress_window.geometry("300x80")
+            progress_window.resizable(False, False)
+            progress_window.transient(self.winfo_toplevel())
+            progress_window.grab_set()
+            
+            # 居中显示
+            window_width = 300
+            window_height = 80
+            position_x = self.winfo_toplevel().winfo_rootx() + (self.winfo_toplevel().winfo_width() - window_width) // 2
+            position_y = self.winfo_toplevel().winfo_rooty() + (self.winfo_toplevel().winfo_height() - window_height) // 2
+            progress_window.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+            
+            # 进度条
+            ttk.Label(progress_window, text="正在处理文件...").pack(pady=(10, 0))
+            progress = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="determinate")
+            progress.pack(pady=10, padx=25)
+            
+            total_items = len(items)
+            processed_items = 0
         
-        # 更新UI状态
-        self._update_ui_state()
-        self._update_status_bar()
+        # 创建队列和结果队列
+        task_queue = queue.Queue()
+        result_queue = queue.Queue()
+        
+        # 装填任务队列
+        for item_id in items:
+            values = list(self.file_tree.item(item_id, "values"))
+            task_queue.put((item_id, values))
+        
+        # 后台处理函数
+        def worker():
+            while not task_queue.empty():
+                try:
+                    item_id, values = task_queue.get(block=False)
+                    if values and len(values) >= 1:
+                        modified, result = process_func(item_id, values)
+                        if modified:
+                            result_queue.put((item_id, result))
+                    task_queue.task_done()
+                except queue.Empty:
+                    break
+            
+            # 通知主线程任务完成
+            self.after(10, check_completion)
+        
+        # 批量更新UI
+        def update_ui_batch():
+            batch_count = 0
+            try:
+                while batch_count < batch_size and not result_queue.empty():
+                    item_id, result = result_queue.get(block=False)
+                    self.file_tree.item(item_id, values=result)
+                    result_queue.task_done()
+                    batch_count += 1
+                    
+                    if show_progress:
+                        nonlocal processed_items
+                        processed_items += 1
+                        progress["value"] = (processed_items / total_items) * 100
+            except queue.Empty:
+                pass
+                
+            # 如果还有结果，继续处理下一批
+            if not result_queue.empty():
+                self.after(1, update_ui_batch)
+            # 如果工作线程还在运行或者结果队列还有数据，继续检查
+            elif not worker_thread.is_alive() and result_queue.empty():
+                if show_progress:
+                    progress_window.destroy()
+                if on_complete:
+                    on_complete()
+        
+        # 检查是否完成
+        def check_completion():
+            if not task_queue.empty():
+                # 任务还未完成，继续等待
+                self.after(50, check_completion)
+                return
+                
+            # 开始处理结果并更新UI
+            if not result_queue.empty():
+                update_ui_batch()
+        
+        # 启动工作线程
+        worker_thread = threading.Thread(target=worker)
+        worker_thread.daemon = True
+        worker_thread.start()
+        
+        # 初始检查完成状态
+        self.after(100, check_completion)
 
     def get_selected_files(self) -> List[str]:
         """
