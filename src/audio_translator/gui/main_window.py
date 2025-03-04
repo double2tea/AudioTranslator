@@ -205,7 +205,7 @@ class AudioTranslatorGUI:
         self.right_paned.pack(fill=tk.BOTH, expand=True)
         
         # 获取服务管理服务
-        self.service_manager = self.service_factory.get_service_manager()
+        self.service_manager = self.service_factory.get_service_manager_service()
         
         if not self.service_manager:
             logger.error("无法获取服务管理器，服务功能将不可用")
