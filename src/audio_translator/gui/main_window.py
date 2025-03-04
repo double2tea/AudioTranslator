@@ -455,6 +455,76 @@ class AudioTranslatorGUI:
                     subprocess.call(('xdg-open', file_info.get('path')))
             except Exception as e:
                 messagebox.showerror("打开文件错误", f"无法打开文件: {e}")
+                
+    def _open_selected_file(self):
+        """打开选中的文件（使用系统默认程序）"""
+        # 获取选中的文件
+        selected_items = self.file_tree.selection()
+        if not selected_items:
+            return
+            
+        # 获取文件信息
+        file_name = self.file_tree.item(selected_items[0], "text")
+        file_info = self.file_manager.get_file_info(file_name)
+        
+        # 检查文件是否存在
+        if file_info and os.path.exists(file_info.get('path')):
+            # 打开文件 (使用系统默认程序)
+            try:
+                if platform.system() == 'Darwin':  # macOS
+                    subprocess.call(('open', file_info.get('path')))
+                elif platform.system() == 'Windows':  # Windows
+                    os.startfile(file_info.get('path'))
+                else:  # Linux
+                    subprocess.call(('xdg-open', file_info.get('path')))
+            except Exception as e:
+                messagebox.showerror("打开文件错误", f"无法打开文件: {e}")
+                
+    def _copy_file_path(self):
+        """复制选中文件的路径到剪贴板"""
+        selected_items = self.file_tree.selection()
+        if not selected_items:
+            return
+            
+        # 获取文件信息
+        file_name = self.file_tree.item(selected_items[0], "text")
+        file_info = self.file_manager.get_file_info(file_name)
+        
+        if file_info and 'path' in file_info:
+            # 复制路径到剪贴板
+            self.root.clipboard_clear()
+            self.root.clipboard_append(file_info['path'])
+            # 在状态栏显示提示
+            self.status_message.set(f"已复制路径: {file_info['path']}")
+            
+    def _delete_selected_files(self):
+        """删除选中的文件"""
+        selected_items = self.file_tree.selection()
+        if not selected_items:
+            return
+            
+        # 获取选中的所有文件名
+        file_names = [self.file_tree.item(item, "text") for item in selected_items]
+        
+        # 确认是否删除
+        if len(file_names) == 1:
+            confirm = messagebox.askyesno("确认删除", f"确定要删除文件 '{file_names[0]}' 吗？")
+        else:
+            confirm = messagebox.askyesno("确认删除", f"确定要删除选中的 {len(file_names)} 个文件吗？")
+            
+        if confirm:
+            try:
+                # 删除文件
+                for file_name in file_names:
+                    file_info = self.file_manager.get_file_info(file_name)
+                    if file_info and os.path.exists(file_info.get('path')):
+                        os.remove(file_info.get('path'))
+                
+                # 刷新文件列表
+                self._refresh_file_tree()
+                self.status_message.set(f"已删除 {len(file_names)} 个文件")
+            except Exception as e:
+                messagebox.showerror("删除错误", f"删除文件时发生错误: {e}")
         
     def _show_file_context_menu(self, event):
         """显示文件右键菜单
