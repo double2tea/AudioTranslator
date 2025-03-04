@@ -16,6 +16,7 @@ import logging
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Dict, Any, Optional, List, Tuple, Union, Callable
+from pathlib import Path
 
 from ...managers.file_manager import FileManager
 from ...utils.ui_utils import create_tooltip, ScrollableFrame
@@ -185,7 +186,7 @@ class FileManagerPanel(SimplePanel):
         x_scrollbar.grid(row=1, column=0, sticky="ew")
         
         # 创建树形视图
-        columns = ("filename", "translated_name", "size", "type", "status")
+        columns = ("selection", "filename", "translated_name", "size", "type", "status")
         self.file_tree = ttk.Treeview(
             tree_frame, 
             columns=columns,
@@ -200,12 +201,14 @@ class FileManagerPanel(SimplePanel):
         x_scrollbar.config(command=self.file_tree.xview)
         
         # 设置列标题和宽度
+        self.file_tree.heading("selection", text="选择", anchor="center")
         self.file_tree.heading("filename", text="文件名", anchor="w")
         self.file_tree.heading("translated_name", text="翻译结果", anchor="w")
         self.file_tree.heading("size", text="大小", anchor="w")
         self.file_tree.heading("type", text="类型", anchor="w")
         self.file_tree.heading("status", text="状态", anchor="w")
         
+        self.file_tree.column("selection", width=40, minwidth=40, stretch=False, anchor="center")
         self.file_tree.column("filename", width=200, minwidth=100)
         self.file_tree.column("translated_name", width=200, minwidth=100)
         self.file_tree.column("size", width=70, minwidth=70)
@@ -287,13 +290,21 @@ class FileManagerPanel(SimplePanel):
         # 清空之前的选择
         self.selected_files = []
         
-        # 添加新选择的文件
-        for item_id in selected_items:
-            values = self.file_tree.item(item_id, "values")
-            if values and len(values) >= 5:  # 确保有足够的值
-                file_path = values[4]  # 第5个值是文件路径
-                if file_path and file_path not in self.selected_files:
+        # 添加新选择的文件并更新选择标记
+        for item_id in self.file_tree.get_children():
+            values = list(self.file_tree.item(item_id, "values"))
+            if len(values) >= 6:  # 确保有足够的值
+                file_path = values[5]  # 第6个值是文件路径
+                
+                # 更新选择标记
+                if item_id in selected_items:
+                    values[0] = "✓"
                     self.selected_files.append(file_path)
+                else:
+                    values[0] = ""
+                
+                # 更新树项的值
+                self.file_tree.item(item_id, values=values)
         
         # 更新状态栏
         self._update_status_bar()
@@ -433,96 +444,79 @@ class FileManagerPanel(SimplePanel):
     
     def load_directory(self, directory: str) -> None:
         """
-        加载指定目录中的文件
+        加载指定目录的文件
         
         Args:
             directory: 要加载的目录路径
         """
-        if not directory or not os.path.isdir(directory):
-            messagebox.showwarning("警告", f"无效的目录: {directory}")
-            return
-        
-        # 更新当前目录
-        self.current_directory = directory
+        # 保存当前目录
+        self.current_directory = Path(directory)
         
         # 清空文件树
         for item in self.file_tree.get_children():
             self.file_tree.delete(item)
         
-        # 更新状态栏目录信息
-        self.status_dir_label.config(text=f"目录: {os.path.basename(directory)}")
+        # 清空选中文件
+        self.selected_files = []
         
-        # 显示加载提示
-        self.file_tree.insert("", "end", text="正在加载...", values=("正在加载文件...", "", "", "", ""))
+        # 显示加载中提示
+        self.file_tree.insert("", "end", text="正在加载...", values=("", "正在加载文件列表...", "", "", "", ""))
         
-        # 使用文件管理器加载目录
+        # 更新状态栏
+        self.status_dir_label.config(text=str(directory))
+        self.status_count_label.config(text="文件: 加载中...")
+        self.status_selected_label.config(text="选中: 0")
+        
+        # 异步加载文件
         if self.file_manager:
-            def on_files_loaded(files):
-                # 清空加载提示
-                for item in self.file_tree.get_children():
-                    self.file_tree.delete(item)
-                
-                # 向树形视图添加文件
-                for file_data in files:
-                    # FileManager返回的是元组: (名称、大小、类型、状态、路径)
+            self.file_manager.load_directory(
+                directory, 
+                callback=lambda files: self.after(0, lambda: self.on_files_loaded(files))
+            )
+        
+        def on_files_loaded(files):
+            # 清空加载提示
+            for item in self.file_tree.get_children():
+                self.file_tree.delete(item)
+            
+            # 批量加载文件数据
+            for file_data in files:
+                if file_data:
                     name, size, file_type, status, file_path = file_data
                     
-                    # 翻译结果初始为空
-                    translated_name = ""
-                    
+                    # 插入文件到树视图 (直接使用FileManager返回的已格式化大小)
                     self.file_tree.insert(
-                        "", "end",
-                        values=(
-                            name,          # 文件名
-                            translated_name,  # 翻译结果
-                            size,          # 文件大小
-                            file_type,     # 文件类型
-                            status,        # 状态
-                            file_path      # 完整路径 (不显示但用于内部处理)
-                        )
+                        "", "end", 
+                        values=("", name, "", size, file_type, status, file_path)
                     )
-                
-                # 应用列设置
-                self._apply_column_settings()
-                
-                # 更新状态栏
-                self._update_status_bar()
-                
-                logger.info(f"已加载目录: {directory}, 共 {len(files)} 个文件")
             
-            # 异步加载文件
-            self.file_manager.load_directory(directory, callback=on_files_loaded)
-        else:
-            messagebox.showerror("错误", "文件管理器未初始化")
-            logger.error("文件管理器未初始化，无法加载目录")
-    
-    def _format_file_size(self, size_in_bytes: int) -> str:
-        """格式化文件大小显示"""
-        if size_in_bytes < 1024:
-            return f"{size_in_bytes} B"
-        elif size_in_bytes < 1024 * 1024:
-            return f"{size_in_bytes/1024:.1f} KB"
-        elif size_in_bytes < 1024 * 1024 * 1024:
-            return f"{size_in_bytes/(1024*1024):.1f} MB"
-        else:
-            return f"{size_in_bytes/(1024*1024*1024):.1f} GB"
+            # 更新状态栏
+            self._update_status_bar()
+            
+            # 应用列显示设置
+            self._apply_column_settings()
+            
+            # 日志记录
+            logger.info(f"已加载目录: {directory}，共 {len(files)} 个文件")
+        
+        self.on_files_loaded = on_files_loaded
     
     def _show_column_settings(self) -> None:
         """显示列设置对话框"""
         # 创建对话框
         dialog = tk.Toplevel(self)
         dialog.title("列显示设置")
-        dialog.geometry("300x200")
-        dialog.transient(self)  # 设置为模态对话框
+        dialog.geometry("300x250")
+        dialog.transient(self.winfo_toplevel())
         dialog.grab_set()
-        dialog.resizable(False, False)
+        dialog.focus_set()
         
-        # 创建列表框
-        frame = ttk.Frame(dialog, padding=10)
-        frame.pack(fill="both", expand=True)
+        # 添加说明标签
+        ttk.Label(dialog, text="选择要显示的列：", padding=10).pack(anchor="w")
         
-        # 列名和显示名称映射
-        column_labels = {
+        # 添加列选择复选框
+        column_names = {
+            "selection": "选择",
             "filename": "文件名",
             "translated_name": "翻译结果",
             "size": "大小",
@@ -530,32 +524,81 @@ class FileManagerPanel(SimplePanel):
             "status": "状态"
         }
         
+        # 确保必选列不能取消选择
+        required_columns = ["selection", "filename", "status"]
+        
         # 创建复选框
-        for i, (col_id, label) in enumerate(column_labels.items()):
-            cb = ttk.Checkbutton(frame, text=label, variable=self.column_visibility[col_id])
-            cb.pack(anchor="w", pady=2)
+        checkboxes = {}
+        for col, label in column_names.items():
+            var = tk.BooleanVar(value=True)
             
-            # 如果是必要列，禁用复选框 (文件名和翻译结果是必选的)
-            if col_id in ["filename", "translated_name"]:
+            # 如果列已经存在于当前设置中，则使用当前值
+            if col in self.column_visibility:
+                var.set(self.column_visibility[col].get())
+            
+            # 创建复选框
+            cb = ttk.Checkbutton(dialog, text=label, variable=var)
+            cb.pack(anchor="w", padx=20, pady=3)
+            checkboxes[col] = var
+            
+            # 如果是必选列，则禁用复选框
+            if col in required_columns:
                 cb.config(state="disabled")
+                var.set(True)
         
-        # 底部按钮
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(fill="x", pady=10)
+        # 按钮框架
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Button(button_frame, text="确定", command=lambda: self._apply_column_settings(dialog)).pack(side="right", padx=5)
-        ttk.Button(button_frame, text="取消", command=dialog.destroy).pack(side="right")
+        # 确定按钮
+        apply_btn = ttk.Button(
+            btn_frame, 
+            text="确定", 
+            command=lambda: self._apply_column_settings(dialog, checkboxes)
+        )
+        apply_btn.pack(side=tk.RIGHT, padx=10)
+        
+        # 取消按钮
+        cancel_btn = ttk.Button(
+            btn_frame, 
+            text="取消", 
+            command=dialog.destroy
+        )
+        cancel_btn.pack(side=tk.RIGHT, padx=5)
     
-    def _apply_column_settings(self, dialog=None) -> None:
-        """应用列设置"""
-        # 更新树视图列的显示状态
-        for col, var in self.column_visibility.items():
-            if var.get():
-                # 显示列
-                self.file_tree.column(col, width=self.file_tree.column(col)['width'])
-            else:
-                # 隐藏列 (设置宽度为0)
-                self.file_tree.column(col, width=0)
+    def _apply_column_settings(self, dialog=None, new_settings=None) -> None:
+        """应用列显示设置"""
+        # 如果提供了新设置，则更新当前的列可见性设置
+        if new_settings:
+            self.column_visibility = new_settings
+        
+        # 应用列可见性设置到树形视图
+        column_names = {
+            "selection": "选择",
+            "filename": "文件名",
+            "translated_name": "翻译结果",
+            "size": "大小",
+            "type": "类型",
+            "status": "状态"
+        }
+        
+        for col in column_names:
+            if col in self.column_visibility:
+                if self.column_visibility[col].get():
+                    # 获取原始宽度
+                    if col == "selection":
+                        self.file_tree.column(col, width=40, stretch=False, minwidth=40)
+                    elif col == "size":
+                        self.file_tree.column(col, width=70, stretch=True, minwidth=70)
+                    elif col == "type":
+                        self.file_tree.column(col, width=50, stretch=True, minwidth=50)
+                    elif col == "status":
+                        self.file_tree.column(col, width=80, stretch=True, minwidth=80)
+                    else:
+                        self.file_tree.column(col, width=200, stretch=True, minwidth=100)
+                else:
+                    # 隐藏列
+                    self.file_tree.column(col, width=0, stretch=False)
         
         # 关闭对话框（如果有）
         if dialog:
@@ -571,9 +614,14 @@ class FileManagerPanel(SimplePanel):
             self.file_tree.selection_add(item_id)
             
             # 获取文件路径并添加到选中列表
-            values = self.file_tree.item(item_id, "values")
-            if values and len(values) >= 5:  # 确保有足够的值
-                file_path = values[4]  # 第5个值是文件路径
+            values = list(self.file_tree.item(item_id, "values"))
+            if values and len(values) >= 6:  # 确保有足够的值
+                file_path = values[5]  # 第6个值是文件路径
+                values[0] = "✓"  # 更新选择标记
+                
+                # 更新树项的值
+                self.file_tree.item(item_id, values=values)
+                
                 if file_path and file_path not in self.selected_files:
                     self.selected_files.append(file_path)
         
@@ -595,15 +643,21 @@ class FileManagerPanel(SimplePanel):
         
         # 选择之前未选中的项
         for item_id in all_items:
-            if item_id not in selected_items:
-                self.file_tree.selection_add(item_id)
+            values = list(self.file_tree.item(item_id, "values"))
+            if len(values) >= 6:
+                file_path = values[5]
                 
-                # 获取文件路径并添加到选中列表
-                values = self.file_tree.item(item_id, "values")
-                if values and len(values) >= 5:
-                    file_path = values[4]
+                if item_id not in selected_items:
+                    self.file_tree.selection_add(item_id)
+                    values[0] = "✓"  # 更新选择标记
+                    
                     if file_path and file_path not in self.selected_files:
                         self.selected_files.append(file_path)
+                else:
+                    values[0] = ""  # 清除选择标记
+                
+                # 更新树项的值
+                self.file_tree.item(item_id, values=values)
         
         # 更新UI状态
         self._update_ui_state()
@@ -614,6 +668,12 @@ class FileManagerPanel(SimplePanel):
         # 清空树视图选择
         for item_id in self.file_tree.selection():
             self.file_tree.selection_remove(item_id)
+            
+            # 清除选择标记
+            values = list(self.file_tree.item(item_id, "values"))
+            if len(values) >= 1:
+                values[0] = ""
+                self.file_tree.item(item_id, values=values)
         
         # 清空选中文件列表
         self.selected_files = []
