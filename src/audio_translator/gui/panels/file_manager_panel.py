@@ -223,6 +223,9 @@ class FileManagerPanel(SimplePanel):
             if not self.column_visibility[col].get():
                 self.file_tree.column(col, width=0, stretch=False)
         
+        # 绑定点击选择列事件 - 使用 Button-1 而不是 ButtonRelease-1 以便更早捕获事件
+        self.file_tree.bind("<Button-1>", self._on_treeview_click)
+        
         # 创建文件树右键菜单
         self._create_file_context_menu()
         
@@ -290,7 +293,7 @@ class FileManagerPanel(SimplePanel):
         # 清空之前的选择
         self.selected_files = []
         
-        # 添加新选择的文件并更新选择标记
+        # 重置所有项的选择标记
         for item_id in self.file_tree.get_children():
             values = list(self.file_tree.item(item_id, "values"))
             if len(values) >= 6:  # 确保有足够的值
@@ -303,7 +306,7 @@ class FileManagerPanel(SimplePanel):
                 else:
                     values[0] = ""
                 
-                # 更新树项的值
+                # 更新树项的值，但避免无限递归
                 self.file_tree.item(item_id, values=values)
         
         # 更新状态栏
@@ -606,17 +609,20 @@ class FileManagerPanel(SimplePanel):
     
     def _select_all_files(self) -> None:
         """选择所有文件"""
-        # 清空当前选择
+        # 获取所有项目ID
+        all_items = self.file_tree.get_children()
+        
+        # 清空当前选择并重置列表
         self.selected_files = []
         
         # 选择所有可见项
-        for item_id in self.file_tree.get_children():
-            self.file_tree.selection_add(item_id)
-            
-            # 获取文件路径并添加到选中列表
+        self.file_tree.selection_set(all_items)
+        
+        # 更新选择标记和收集文件路径
+        for item_id in all_items:
             values = list(self.file_tree.item(item_id, "values"))
-            if values and len(values) >= 6:  # 确保有足够的值
-                file_path = values[5]  # 第6个值是文件路径
+            if values and len(values) >= 6:
+                file_path = values[5]
                 values[0] = "✓"  # 更新选择标记
                 
                 # 更新树项的值
@@ -689,4 +695,64 @@ class FileManagerPanel(SimplePanel):
         Returns:
             包含所有选中文件路径的列表
         """
-        return self.selected_files.copy()  # 返回副本以防止外部修改 
+        return self.selected_files.copy()  # 返回副本以防止外部修改
+
+    def _on_treeview_click(self, event) -> None:
+        """处理树视图点击事件，特别是点击选择列的情况"""
+        # 获取点击的区域和列
+        region = self.file_tree.identify_region(event.x, event.y)
+        column = self.file_tree.identify_column(event.x)
+        item = self.file_tree.identify_row(event.y)
+        
+        # 只有在点击选择列时才进行特殊处理
+        if column == "#1" and item and region == "cell":  # #1 表示第一列 (selection)
+            # 切换选择状态，不清除其他选择
+            if item in self.file_tree.selection():
+                self._toggle_item_selection(item, add_to_selection=False)
+            else:
+                self._toggle_item_selection(item, add_to_selection=True)
+            
+            # 阻止默认的 Treeview 选择行为
+            return "break"
+        
+        # 对于其他列，保持默认行为
+
+    def _toggle_item_selection(self, item_id, add_to_selection=True) -> None:
+        """
+        切换单个项目的选择状态
+        
+        Args:
+            item_id: 要切换选择状态的项ID
+            add_to_selection: 是否将项添加到当前选择中，或者替换当前选择
+        """
+        values = list(self.file_tree.item(item_id, "values"))
+        if len(values) >= 6:
+            file_path = values[5]
+            
+            # 切换选择状态
+            if values[0] == "✓":  # 已选中，取消选择
+                values[0] = ""
+                if file_path in self.selected_files:
+                    self.selected_files.remove(file_path)
+                
+                # 从树视图选择中移除
+                self.file_tree.selection_remove(item_id)
+            else:  # 未选中，选中
+                values[0] = "✓"
+                if file_path and file_path not in self.selected_files:
+                    self.selected_files.append(file_path)
+                
+                # 根据 add_to_selection 参数决定是否保留现有选择
+                if not add_to_selection:
+                    # 清除其他选择，只选择当前项
+                    self.file_tree.selection_set(item_id)
+                else:
+                    # 添加到当前选择
+                    self.file_tree.selection_add(item_id)
+            
+            # 更新树项的值
+            self.file_tree.item(item_id, values=values)
+            
+            # 更新UI状态
+            self._update_ui_state()
+            self._update_status_bar() 
