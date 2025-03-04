@@ -1073,77 +1073,112 @@ class AudioTranslatorGUI:
         """创建分类区域"""
         # 创建分类区域框架
         category_frame = ttk.LabelFrame(parent_frame, text="分类管理", style="Dark.TLabelframe")
-        category_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # 设置grid布局
+        category_frame.columnconfigure(0, weight=1)
+        category_frame.rowconfigure(0, weight=1)
         
         # 创建内容框架
         content_frame = ttk.Frame(category_frame, style="Dark.TFrame")
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        content_frame.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        
+        # 内容框架grid布局设置
+        content_frame.columnconfigure(0, weight=1)
+        content_frame.rowconfigure(0, weight=0)  # 选项框架不需要扩展
+        content_frame.rowconfigure(1, weight=1)  # 树框架填充空间
+        content_frame.rowconfigure(2, weight=0)  # 按钮框架不需要扩展
+        content_frame.rowconfigure(3, weight=0)  # 统计框架不需要扩展
         
         # 创建选项框架
         options_frame = ttk.Frame(content_frame, style="Dark.TFrame")
-        options_frame.pack(fill=tk.X, side=tk.TOP, pady=(0, 5))
+        options_frame.grid(row=0, column=0, sticky='ew', pady=(0, 5))
+        
+        # 设置options_frame的列配置
+        options_frame.columnconfigure(0, weight=1)
         
         # 添加子分类选项
         self.use_subcategory_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
+        use_subcategory_cb = ttk.Checkbutton(
             options_frame, 
-            text="使用子分类", 
+            text="包含子分类", 
             variable=self.use_subcategory_var,
             style="Dark.TCheckbutton"
-        ).pack(side=tk.LEFT, padx=5)
+        )
+        use_subcategory_cb.grid(row=0, column=0, sticky='w', padx=5)
         
         # 创建树形视图框架
         tree_frame = ttk.Frame(content_frame, style="Dark.TFrame")
-        tree_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
+        tree_frame.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
+        
+        # 设置tree_frame的行列配置
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
         
         # 创建分类树形视图
-        columns = ("count",)
-        self.category_tree = ttk.Treeview(tree_frame, columns=columns, selectmode="browse")
-        self.category_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        columns = ('count',)
+        self.category_tree = ttk.Treeview(
+            tree_frame, 
+            columns=columns, 
+            show='tree headings', 
+            selectmode='browse',
+            style="Dark.Treeview"
+        )
         
-        # 配置列宽和标题
-        self.category_tree.column("#0", width=200, minwidth=150)
-        self.category_tree.column("count", width=60, anchor=tk.CENTER)
+        # 设置列标题
+        self.category_tree.heading('#0', text='分类名称', anchor='w')
+        self.category_tree.heading('count', text='文件数', anchor='center')
         
-        # 设置表头
-        self.category_tree.heading("#0", text="分类名称")
-        self.category_tree.heading("count", text="文件数")
+        # 设置列宽度
+        self.category_tree.column('#0', width=200, stretch=True)
+        self.category_tree.column('count', width=80, anchor='center', stretch=False)
         
-        # 添加垂直滚动条
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.category_tree.yview)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        self.category_tree.configure(yscrollcommand=vsb.set)
+        # 添加滚动条
+        category_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.category_tree.yview)
+        self.category_tree.configure(yscrollcommand=category_vsb.set)
+        
+        # 放置树形视图和滚动条
+        self.category_tree.grid(row=0, column=0, sticky='nsew')
+        category_vsb.grid(row=0, column=1, sticky='ns')
         
         # 创建按钮框架
         button_frame = ttk.Frame(content_frame, style="Dark.TFrame")
-        button_frame.pack(fill=tk.X, side=tk.TOP, pady=5)
+        button_frame.grid(row=2, column=0, sticky='ew', pady=5)
+        
+        # 设置button_frame的列配置
+        button_frame.columnconfigure(0, weight=1)
+        button_frame.columnconfigure(1, weight=1)
         
         # 添加分类按钮
-        ttk.Button(
+        self.manual_categorize_button = ttk.Button(
             button_frame, 
             text="手动分类", 
             command=self._categorize_selected_files,
             style="Dark.TButton"
-        ).pack(side=tk.LEFT, padx=5)
+        )
+        self.manual_categorize_button.grid(row=0, column=0, sticky='ew', padx=(0, 2))
         
-        ttk.Button(
+        self.auto_categorize_button = ttk.Button(
             button_frame, 
             text="自动分类", 
             command=self._auto_categorize_files,
             style="Dark.TButton"
-        ).pack(side=tk.LEFT, padx=5)
+        )
+        self.auto_categorize_button.grid(row=0, column=1, sticky='ew', padx=(2, 0))
         
         # 创建统计框架
         stats_frame = ttk.Frame(content_frame, style="Dark.TFrame")
-        stats_frame.pack(fill=tk.X, side=tk.TOP, pady=5)
+        stats_frame.grid(row=3, column=0, sticky='ew', pady=5)
+        
+        # 设置stats_frame的列配置
+        stats_frame.columnconfigure(0, weight=1)
         
         # 添加分类统计信息
         self.category_stats_label = ttk.Label(
             stats_frame, 
-            text="共0个分类", 
+            text="分类总数: 0", 
             style="Dark.TLabel"
         )
-        self.category_stats_label.pack(side=tk.LEFT, padx=5)
+        self.category_stats_label.grid(row=0, column=0, sticky='w', padx=5)
         
         # 绑定分类树选择事件
         self.category_tree.bind("<<TreeviewSelect>>", self._on_category_selected)
