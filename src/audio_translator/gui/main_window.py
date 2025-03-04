@@ -612,7 +612,7 @@ class AudioTranslatorGUI:
             self.category_tree.delete(item)
         
         # 获取分类列表
-        categories = self.category_manager.categories
+        categories = list(self.category_manager.categories.values())
         
         # 按字母顺序排序
         categories.sort(key=lambda x: x.name.lower())
