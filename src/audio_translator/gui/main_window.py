@@ -27,6 +27,7 @@ from ..gui.dialogs.auto_categorize_dialog import AutoCategorizeDialog
 from ..services.core.service_manager_service import ServiceManagerService
 from ..services.api.model_service import ModelService
 from ..gui.panels.service_manager_panel import ServiceManagerPanel
+from ..gui.panels.file_manager_panel import FileManagerPanel
 from ..services.core.service_factory import ServiceFactory
 # 设置日志记录器
 logger = logging.getLogger(__name__)
@@ -383,6 +384,11 @@ class AudioTranslatorGUI:
         file_area_frame = ttk.LabelFrame(parent_frame, text="文件列表", style="Dark.TLabelframe")
         file_area_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
+        # 创建FileManagerPanel实例
+        self.file_manager_panel = FileManagerPanel(file_area_frame, self.file_manager)
+        self.file_manager_panel.pack(fill=tk.BOTH, expand=True)
+        
+        # 保留目录显示功能
         # 创建目录显示框架
         dir_frame = ttk.Frame(file_area_frame, style="Dark.TFrame", padding=(5, 5))
         dir_frame.pack(fill=tk.X, side=tk.TOP, pady=(0, 5))
@@ -394,509 +400,141 @@ class AudioTranslatorGUI:
         self.current_dir_var = tk.StringVar(value="未选择目录")
         ttk.Label(dir_frame, textvariable=self.current_dir_var, style="Dark.TLabel").pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # 创建文件框架
-        file_frame = ttk.Frame(file_area_frame, style="Dark.TFrame")
-        file_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 创建文件树形视图
-        columns = ("size", "type", "status")
-        self.file_tree = ttk.Treeview(file_frame, columns=columns, show="tree headings", selectmode="extended")
-        
-        # 设置列宽和标题
-        self.file_tree.column("#0", width=250, minwidth=200)
-        self.file_tree.column("size", width=80, anchor=tk.E)
-        self.file_tree.column("type", width=80, anchor=tk.CENTER)
-        self.file_tree.column("status", width=80, anchor=tk.CENTER)
-        
-        # 设置表头
-        self.file_tree.heading("#0", text="文件名", command=lambda: self._sort_file_tree("#0"))
-        self.file_tree.heading("size", text="大小", command=lambda: self._sort_file_tree("size"))
-        self.file_tree.heading("type", text="类型", command=lambda: self._sort_file_tree("type"))
-        self.file_tree.heading("status", text="状态", command=lambda: self._sort_file_tree("status"))
-        
-        # 添加垂直滚动条
-        vsb = ttk.Scrollbar(file_frame, orient="vertical", command=self.file_tree.yview)
-        self.file_tree.configure(yscrollcommand=vsb.set)
-        
-        # 添加水平滚动条
-        hsb = ttk.Scrollbar(file_frame, orient="horizontal", command=self.file_tree.xview)
-        self.file_tree.configure(xscrollcommand=hsb.set)
-        
-        # 放置文件树和滚动条
-        self.file_tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
-        hsb.grid(row=1, column=0, sticky="ew")
-        
-        # 配置网格布局权重
-        file_frame.grid_rowconfigure(0, weight=1)
-        file_frame.grid_columnconfigure(0, weight=1)
-        
-        # 绑定双击事件
-        self.file_tree.bind("<Double-1>", self._on_file_double_click)
-        
-        # 绑定选择事件
-        self.file_tree.bind("<<TreeviewSelect>>", self._on_file_selected)
-        
-        # 绑定右键菜单
-        self.file_tree.bind("<Button-3>", self._show_file_context_menu)
-        
-        # 创建右键菜单
-        self.file_context_menu = tk.Menu(self.root, tearoff=0, bg=self.COLORS['bg_dark'], fg=self.COLORS['fg'])
-        self.file_context_menu.add_command(label="打开文件", command=self._open_selected_file)
-        self.file_context_menu.add_command(label="复制文件路径", command=self._copy_file_path)
-        self.file_context_menu.add_command(label="删除文件", command=self._delete_selected_files)
-        self.file_context_menu.add_separator()
-        self.file_context_menu.add_command(label="手动分类", command=self._categorize_selected_files)
-        self.file_context_menu.add_command(label="自动分类", command=self._auto_categorize_files)
-        
         return file_area_frame
     
     def _on_file_selected(self, event):
-        """处理文件选择事件
-        
-        Args:
-            event: 事件对象
         """
-        selected_items = self.file_tree.selection()
-        selected_files = []
+        处理文件选择事件
         
-        # 获取选中文件的路径
-        for item in selected_items:
-            if item:
-                file_path = self.file_tree.item(item, "tags")[0]
-                selected_files.append(file_path)
-        
-        # 更新文件管理器中的选中文件
-        self.file_manager.set_selected_files(selected_files)
-        
-        # 更新本地选中文件列表
-        self.selected_files = selected_files
-        
-        # 更新状态栏
-        self._update_status_bar()
-        
+        此方法现在由FileManagerPanel内部处理，保留此方法是为了兼容现有代码
+        """
+        pass
+    
     def _on_file_double_click(self, event):
-        """文件双击事件处理
-        
-        Args:
-            event: 事件对象
         """
-        # 获取选中的文件
-        selected_items = self.file_tree.selection()
-        if not selected_items:
-            return
-            
-        # 获取文件信息
-        file_name = self.file_tree.item(selected_items[0], "text")
-        file_info = self.file_manager.get_file_info(file_name)
+        处理文件双击事件
         
-        # 检查文件是否存在
-        if file_info and os.path.exists(file_info.get('path')):
-            # 打开文件 (使用系统默认程序)
-            try:
-                if platform.system() == 'Darwin':  # macOS
-                    subprocess.call(('open', file_info.get('path')))
-                elif platform.system() == 'Windows':  # Windows
-                    os.startfile(file_info.get('path'))
-                else:  # Linux
-                    subprocess.call(('xdg-open', file_info.get('path')))
-            except Exception as e:
-                messagebox.showerror("打开文件错误", f"无法打开文件: {e}")
-                
-    def _open_selected_file(self):
-        """打开选中的文件（使用系统默认程序）"""
-        # 获取选中的文件
-        selected_items = self.file_tree.selection()
-        if not selected_items:
-            return
-            
-        # 获取文件信息
-        file_name = self.file_tree.item(selected_items[0], "text")
-        file_info = self.file_manager.get_file_info(file_name)
-        
-        # 检查文件是否存在
-        if file_info and os.path.exists(file_info.get('path')):
-            # 打开文件 (使用系统默认程序)
-            try:
-                if platform.system() == 'Darwin':  # macOS
-                    subprocess.call(('open', file_info.get('path')))
-                elif platform.system() == 'Windows':  # Windows
-                    os.startfile(file_info.get('path'))
-                else:  # Linux
-                    subprocess.call(('xdg-open', file_info.get('path')))
-            except Exception as e:
-                messagebox.showerror("打开文件错误", f"无法打开文件: {e}")
-                
-    def _copy_file_path(self):
-        """复制选中文件的路径到剪贴板"""
-        selected_items = self.file_tree.selection()
-        if not selected_items:
-            return
-            
-        # 获取文件信息
-        file_name = self.file_tree.item(selected_items[0], "text")
-        file_info = self.file_manager.get_file_info(file_name)
-        
-        if file_info and 'path' in file_info:
-            # 复制路径到剪贴板
-            self.root.clipboard_clear()
-            self.root.clipboard_append(file_info['path'])
-            # 在状态栏显示提示
-            self.status_message.set(f"已复制路径: {file_info['path']}")
-            
-    def _delete_selected_files(self):
-        """删除选中的文件"""
-        selected_items = self.file_tree.selection()
-        if not selected_items:
-            return
-            
-        # 获取选中的所有文件名
-        file_names = [self.file_tree.item(item, "text") for item in selected_items]
-        
-        # 确认是否删除
-        if len(file_names) == 1:
-            confirm = messagebox.askyesno("确认删除", f"确定要删除文件 '{file_names[0]}' 吗？")
-        else:
-            confirm = messagebox.askyesno("确认删除", f"确定要删除选中的 {len(file_names)} 个文件吗？")
-            
-        if confirm:
-            try:
-                # 删除文件
-                for file_name in file_names:
-                    file_info = self.file_manager.get_file_info(file_name)
-                    if file_info and os.path.exists(file_info.get('path')):
-                        os.remove(file_info.get('path'))
-                
-                # 刷新文件列表
-                self._refresh_file_tree()
-                self.status_message.set(f"已删除 {len(file_names)} 个文件")
-            except Exception as e:
-                messagebox.showerror("删除错误", f"删除文件时发生错误: {e}")
-        
+        此方法现在由FileManagerPanel内部处理，保留此方法是为了兼容现有代码
+        """
+        pass
+    
     def _show_file_context_menu(self, event):
-        """显示文件右键菜单
-        
-        Args:
-            event: 事件对象
         """
-        # 获取选中的文件
-        selected_items = self.file_tree.selection()
-        if not selected_items:
+        显示文件右键菜单
+        
+        此方法现在由FileManagerPanel内部处理，保留此方法是为了兼容现有代码
+        """
+        pass
+    
+    def _open_selected_file(self):
+        """
+        打开选中的文件
+        
+        此方法现在由FileManagerPanel内部处理，保留此方法是为了兼容现有代码
+        """
+        pass
+    
+    def _copy_file_path(self):
+        """
+        复制文件路径
+        
+        此方法现在由FileManagerPanel内部处理，保留此方法是为了兼容现有代码
+        """
+        pass
+    
+    def _delete_selected_files(self):
+        """
+        删除选定的文件
+        
+        此方法现在由FileManagerPanel内部处理，保留此方法是为了兼容现有代码
+        """
+        pass
+        
+    def _categorize_selected_files(self):
+        """
+        分类选定的文件
+        
+        使用FileManagerPanel获取选中的文件
+        """
+        if not hasattr(self, 'file_manager_panel'):
+            messagebox.showinfo("提示", "请先加载文件")
             return
             
-        # 显示右键菜单
-        try:
-            self.file_context_menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            self.file_context_menu.grab_release()
-            
-    def _set_file_status(self, status):
-        """设置文件状态
-        
-        Args:
-            status: 文件状态
-        """
-        # 获取选中的文件
-        selected_items = self.file_tree.selection()
-        if not selected_items:
+        selected_files = self.file_manager_panel.get_selected_files()
+        if not selected_files:
+            messagebox.showinfo("提示", "请选择要分类的文件")
             return
             
-        # 获取文件名
-        file_names = [self.file_tree.item(item, "text") for item in selected_items]
+        # 创建分类选择对话框
+        dialog = CategorySelectionDialog(
+            self.root, 
+            self.category_manager, 
+            selected_files
+        )
         
-        # 批量更新文件状态
-        self.file_manager.batch_update_status(file_names, status)
-        
-        # 刷新文件树
-        self._refresh_file_tree()
-        
-    def _sort_files(self, column):
-        """排序文件
-        
-        Args:
-            column: 排序列
-        """
-        # 设置排序键和排序方向
-        if self.file_manager.sorting_key == column:
-            # 如果已经是当前排序列，则反转排序方向
-            self.file_manager.sorting_reverse = not self.file_manager.sorting_reverse
-        else:
-            # 否则，设置新的排序列，并设置升序排序
-            self.file_manager.sorting_key = column
-            self.file_manager.sorting_reverse = False
+        # 如果用户确认分类，更新文件状态
+        if dialog.result:
+            category_id = dialog.result
+            category_name = self.category_manager.get_category_name(category_id)
             
-        # 刷新文件树
-        self._refresh_file_tree()
-        
-    def _apply_filters(self):
-        """应用过滤器"""
-        # 获取搜索文本
-        search_text = self.search_var.get().lower()
-        
-        # 获取状态过滤器
-        status_filter = self.status_filter_var.get()
-        
-        # 清空文件树
-        for item in self.file_tree.get_children():
-            self.file_tree.delete(item)
+            # 更新文件状态
+            count = self.file_manager.batch_update_status(selected_files, f"已分类: {category_name}")
             
-        # 获取文件列表
-        files = self.file_manager.get_files()
-        
-        # 应用过滤器
-        for file_name, file_info in files.items():
-            # 应用搜索过滤器
-            if search_text and search_text not in file_name.lower():
-                continue
+            # 更新UI
+            if hasattr(self, 'file_manager_panel'):
+                self.file_manager_panel._refresh_files()
                 
-            # 应用状态过滤器
-            if status_filter != "全部" and file_info.get('status') != status_filter:
-                continue
-                
-            # 添加文件到树
-            self.file_tree.insert(
-                "", 
-                "end", 
-                text=file_name, 
-                values=(
-                    file_info.get('formatted_size', '未知'),
-                    file_info.get('extension', '未知'),
-                    file_info.get('status', '未处理')
-                )
-            )
+            # 更新状态栏
+            self.status_message.set(f"已将 {count} 个文件分类为 {category_name}")
             
-        # 更新状态栏
-        self._update_status_bar()
+            # 记录日志
+            logger.info(f"已将 {count} 个文件分类为 {category_name} (ID: {category_id})")
     
-    def _create_status_bar(self):
-        """创建状态栏"""
-        # 创建状态栏框架
-        self.status_bar = ttk.Frame(self.root, style="Dark.TFrame")
-        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM, pady=(5, 0))
-        
-        # 左侧状态信息
-        self.status_left = ttk.Label(
-            self.status_bar, 
-            text="就绪", 
-            style="Dark.TLabel", 
-            padding=(5, 2)
-        )
-        self.status_left.pack(side=tk.LEFT)
-        
-        # 右侧文件计数
-        self.file_count_label = ttk.Label(
-            self.status_bar, 
-            text="文件数: 0", 
-            style="Dark.TLabel", 
-            padding=(5, 2)
-        )
-        self.file_count_label.pack(side=tk.RIGHT)
-        
-        # 中间进度条（默认隐藏）
-        self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(
-            self.status_bar, 
-            orient=tk.HORIZONTAL, 
-            length=200, 
-            mode='determinate', 
-            variable=self.progress_var
-        )
-        # 进度条默认隐藏，需要时再显示
-    
-    def _bind_events(self):
-        """绑定事件处理函数"""
-        # 文件选择事件
-        self.file_tree.bind("<<TreeviewSelect>>", self._on_file_selected)
-        # 文件双击事件
-        self.file_tree.bind("<Double-1>", self._on_file_double_click)
-        # 鼠标右键菜单事件
-        self.file_tree.bind("<Button-3>", self._show_file_context_menu)
-        
-        # 窗口大小调整事件
-        self.root.bind("<Configure>", self._on_window_resize)
-        
-        # 键盘快捷键
-        self.root.bind("<Control-o>", lambda e: self._open_directory())
-        self.root.bind("<Control-r>", lambda e: self._refresh_current_directory())
-        self.root.bind("<Control-f>", lambda e: self.search_entry.focus_set())
-        self.root.bind("<Escape>", lambda e: self.root.focus_set())
-    
-    def _on_window_resize(self, event):
-        """窗口大小调整事件处理
-        
-        Args:
-            event: 事件对象
+    def _auto_categorize_files(self):
         """
-        # 仅在主窗口大小调整时处理
-        if event.widget == self.root:
-            # 调整文件树列宽
-            tree_width = self.file_tree.winfo_width()
-            if tree_width > 100:  # 防止过小时调整
-                self.file_tree.column("#0", width=int(tree_width * 0.5))
-                self.file_tree.column("size", width=int(tree_width * 0.15))
-                self.file_tree.column("type", width=int(tree_width * 0.15))
-                self.file_tree.column("status", width=int(tree_width * 0.2))
-    
-    def _open_directory(self):
-        """打开目录对话框"""
-        directory = filedialog.askdirectory(
-            title="选择音频文件目录",
-            initialdir=self.current_directory.get() or os.path.expanduser("~")
-        )
+        自动分类文件
         
-        if directory:
-            self.current_directory.set(directory)
-            self._load_files(directory)
-            
-    def _refresh_current_directory(self):
-        """刷新当前目录"""
-        directory = self.current_directory.get()
-        if directory and os.path.isdir(directory):
-            self._load_files(directory)
-        else:
-            messagebox.showerror("错误", "请先选择一个有效的目录")
-    
-    def _load_files(self, directory=None):
-        """加载文件夹中的文件
-        
-        Args:
-            directory: 要加载的目录，如果为None则使用当前目录
+        使用FileManagerPanel获取选中的文件
         """
-        if directory is None:
-            directory = self.current_directory.get()
-            
-        if not directory or not os.path.isdir(directory):
-            messagebox.showerror("错误", "无效的目录路径")
+        if not hasattr(self, 'file_manager_panel'):
+            messagebox.showinfo("提示", "请先加载文件")
             return
             
-        # 更新当前目录
-        self.current_directory.set(directory)
-        
-        # 清空文件树
-        for item in self.file_tree.get_children():
-            self.file_tree.delete(item)
+        selected_files = self.file_manager_panel.get_selected_files()
+        if not selected_files:
+            messagebox.showinfo("提示", "请选择要自动分类的文件")
+            return
             
-        # 设置状态信息
-        self.status_message.set("正在加载文件，请稍候...")
-        self.root.update_idletasks()
-        
-        # 定义进度回调函数
-        def progress_callback(current, total, file=None):
-            message = f"正在加载... {current}/{total}"
-            if file:
-                message += f" - {os.path.basename(file)}"
-            self.status_message.set(message)
-            self.root.update_idletasks()
-            
-        # 定义完成回调函数
-        def done_callback(files):
-            try:
-                # 文件已经被加载到FileManager中，直接刷新文件树UI
-                self._refresh_file_tree()
-                
-                # 更新状态
-                total_files = len(files) if isinstance(files, list) else len(self.file_manager.get_files())
-                self.status_message.set(f"已加载 {total_files} 个文件")
-                
-                # 记录日志
-                logger.info(f"已加载目录: {directory}, 共 {total_files} 个文件")
-            except Exception as e:
-                # 显示错误信息
-                logger.error(f"加载文件回调错误: {e}")
-                self.status_message.set(f"加载文件失败: {str(e)}")
-                messagebox.showerror("加载错误", f"加载文件失败: {str(e)}")
-        
-        # 异步加载文件
-        self.file_manager.load_directory(
-            directory, 
-            callback=done_callback
+        # 创建自动分类对话框
+        dialog = AutoCategorizeDialog(
+            self.root, 
+            self.category_manager,
+            self.file_manager,
+            selected_files
         )
-    
-    def _refresh_file_tree(self):
-        """刷新文件树显示"""
-        # 保存当前选中的文件
-        selected_items = self.file_tree.selection()
-        selected_iids = {}
         
-        # 保存选中的文件路径作为标识符
-        for item in selected_items:
-            file_path = self.file_tree.item(item, "tags")[0] if self.file_tree.item(item, "tags") else None
-            if file_path:
-                selected_iids[file_path] = True
-        
-        # 清空文件树
-        for item in self.file_tree.get_children():
-            self.file_tree.delete(item)
-        
-        # 获取文件列表 - 格式为: [(name, size_str, file_type, status, file_path), ...]
-        files = self.file_manager.get_files()
-        
-        # 应用排序
-        if hasattr(self.file_manager, 'sorting_key') and hasattr(self.file_manager, 'sorting_reverse'):
-            reverse = self.file_manager.sorting_reverse
-            
-            if self.file_manager.sorting_key == 'name':
-                sorted_files = sorted(files, key=lambda x: x[0].lower(), reverse=reverse)
-            elif self.file_manager.sorting_key == 'size':
-                # 尝试将大小字符串转换为字节数进行排序
-                def size_to_bytes(size_str):
-                    try:
-                        if 'KB' in size_str:
-                            return float(size_str.replace('KB', '').strip()) * 1024
-                        elif 'MB' in size_str:
-                            return float(size_str.replace('MB', '').strip()) * 1024 * 1024
-                        elif 'GB' in size_str:
-                            return float(size_str.replace('GB', '').strip()) * 1024 * 1024 * 1024
-                        else:
-                            return float(size_str.replace('B', '').strip())
-                    except:
-                        return 0
+        # 如果用户确认分类，更新文件状态并刷新UI
+        if dialog.categorized_files:
+            # 更新UI
+            if hasattr(self, 'file_manager_panel'):
+                self.file_manager_panel._refresh_files()
                 
-                sorted_files = sorted(files, key=lambda x: size_to_bytes(x[1]), reverse=reverse)
-            elif self.file_manager.sorting_key == 'type':
-                sorted_files = sorted(files, key=lambda x: x[2].lower(), reverse=reverse)
-            elif self.file_manager.sorting_key == 'status':
-                sorted_files = sorted(files, key=lambda x: x[3].lower(), reverse=reverse)
-            else:
-                sorted_files = files
-        else:
-            sorted_files = files
-        
-        # 填充文件树
-        for name, size_str, file_type, status, file_path in sorted_files:
-            # 应用搜索过滤器
-            search_text = self.search_var.get().lower()
-            if search_text and search_text not in name.lower():
-                continue
+            # 更新状态栏
+            count = len(dialog.categorized_files)
+            self.status_message.set(f"已自动分类 {count} 个文件")
             
-            # 应用状态过滤器
-            status_filter = self.status_filter_var.get()
-            if status_filter != "全部" and status != status_filter:
-                continue
-            
-            # 添加文件到树
-            item_id = self.file_tree.insert(
-                "", 
-                "end", 
-                text=name, 
-                values=(size_str, file_type, status),
-                tags=(file_path,)
-            )
-            
-            # 恢复选中状态
-            if file_path in selected_iids:
-                self.file_tree.selection_add(item_id)
-        
-        # 更新状态栏
-        self._update_status_bar()
+            # 记录日志
+            logger.info(f"已自动分类 {count} 个文件")
     
     def _on_search_change(self, *args):
         """当搜索文本变化时过滤文件列表"""
-        self._apply_filters()
+        # 将由FileManagerPanel处理
+        pass
         
     def _on_filter_change(self, event):
         """当过滤条件变化时过滤文件列表"""
-        self._apply_filters()
+        # 将由FileManagerPanel处理
+        pass
         
     def _update_status_bar(self):
         """更新状态栏"""
@@ -985,253 +623,6 @@ class AudioTranslatorGUI:
         # 临时实现，后续可以添加实际的首选项对话框
         messagebox.showinfo("首选项", "首选项功能正在开发中...")
 
-    def _categorize_selected_files(self):
-        """手动分类选中的文件"""
-        # 确保有选中的文件
-        selected_files = self.file_manager.get_selected_files()
-        if not selected_files:
-            messagebox.showinfo("提示", "请先选择要分类的文件")
-            return
-            
-        # 获取所有分类
-        categories = self.category_manager.get_categories()
-        if not categories:
-            messagebox.showinfo("提示", "没有可用的分类数据")
-            return
-            
-        # 打开分类选择对话框
-        dialog = CategorySelectionDialog(
-            self.root, 
-            categories, 
-            selected_files,
-            self.category_manager.get_use_subcategory_var().get()
-        )
-        result = dialog.result
-        
-        # 如果用户选择了分类
-        if result and 'category_id' in result:
-            try:
-                # 获取选择的分类ID
-                category_id = result['category_id']
-                
-                # 移动文件到选定的分类
-                moved_files = self.category_manager.move_files_to_category(
-                    selected_files, 
-                    category_id
-                )
-                
-                # 批量更新文件状态
-                file_names = [os.path.basename(file) for file in moved_files]
-                self.file_manager.batch_update_status(file_names, "已分类")
-                
-                # 刷新文件树
-                self._refresh_file_tree()
-                
-                # 显示结果消息
-                messagebox.showinfo("分类完成", f"成功分类 {len(moved_files)} 个文件")
-                
-            except Exception as e:
-                messagebox.showerror("错误", f"分类文件失败: {str(e)}")
-                logger.error(f"分类文件失败: {e}")
-                
-    def _auto_categorize_files(self):
-        """自动分类选中的文件"""
-        # 确保有选中的文件
-        selected_files = self.file_manager.get_selected_files()
-        if not selected_files:
-            messagebox.showinfo("提示", "请先选择要分类的文件")
-            return
-            
-        # 打开自动分类对话框
-        dialog = AutoCategorizeDialog(
-            self.root,
-            selected_files,
-            self.file_manager,
-            self.category_manager
-        )
-        
-        if dialog.result.get('success', False):
-            # 刷新文件树
-            self._refresh_file_tree()
-            
-            # 更新分类树
-            self._populate_category_tree()
-            
-            # 显示成功消息
-            messagebox.showinfo("自动分类", f"成功完成 {len(selected_files)} 个文件的自动分类")
-
-    def _populate_category_tree(self):
-        """填充分类树"""
-        # 清空分类树
-        for item in self.category_tree.get_children():
-            self.category_tree.delete(item)
-        
-        # 获取分类列表
-        categories = list(self.category_manager.categories.values())
-        
-        # 按字母顺序排序
-        categories.sort(key=lambda x: x.name_zh.lower())
-        
-        # 插入根分类
-        for category in categories:
-            # 只显示根分类
-            if not category.subcategory:
-                # 创建根节点
-                node_id = self.category_tree.insert(
-                    "", 
-                    "end", 
-                    text=category.name_zh, 
-                    values=(category.count if hasattr(category, 'count') else 0,)
-                )
-                
-                # 递归添加子分类
-                self._add_subcategories(category.cat_id, node_id)
-        
-        # 更新统计信息
-        self.category_stats_label.config(text=f"共{len(categories)}个分类")
-    
-    def _add_subcategories(self, parent_id, tree_parent):
-        """递归添加子分类
-        
-        Args:
-            parent_id: 父分类ID
-            tree_parent: 树中的父节点ID
-        """
-        # 获取子分类
-        subcategories = self.category_manager.get_subcategories(parent_id)
-        
-        # 按字母顺序排序
-        subcategories.sort(key=lambda x: x.name_zh.lower())
-        
-        # 添加子分类
-        for subcategory in subcategories:
-            # 创建节点
-            node_id = self.category_tree.insert(
-                tree_parent, 
-                "end", 
-                text=subcategory.name_zh,  # 使用中文名称
-                values=(subcategory.count if hasattr(subcategory, 'count') else 0,)
-            )
-            
-            # 递归添加子分类的子分类
-            self._add_subcategories(subcategory.cat_id, node_id)
-
-    def _create_category_area(self, parent_frame):
-        """创建分类区域"""
-        # 创建分类区域框架
-        category_frame = ttk.LabelFrame(parent_frame, text="分类管理", style="Dark.TLabelframe")
-        
-        # 设置grid布局
-        category_frame.columnconfigure(0, weight=1)
-        category_frame.rowconfigure(0, weight=1)
-        
-        # 创建内容框架
-        content_frame = ttk.Frame(category_frame, style="Dark.TFrame")
-        content_frame.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-        
-        # 内容框架grid布局设置
-        content_frame.columnconfigure(0, weight=1)
-        content_frame.rowconfigure(0, weight=0)  # 选项框架不需要扩展
-        content_frame.rowconfigure(1, weight=1)  # 树框架填充空间
-        content_frame.rowconfigure(2, weight=0)  # 按钮框架不需要扩展
-        content_frame.rowconfigure(3, weight=0)  # 统计框架不需要扩展
-        
-        # 创建选项框架
-        options_frame = ttk.Frame(content_frame, style="Dark.TFrame")
-        options_frame.grid(row=0, column=0, sticky='ew', pady=(0, 5))
-        
-        # 设置options_frame的列配置
-        options_frame.columnconfigure(0, weight=1)
-        
-        # 添加子分类选项
-        self.use_subcategory_var = tk.BooleanVar(value=True)
-        use_subcategory_cb = ttk.Checkbutton(
-            options_frame, 
-            text="包含子分类", 
-            variable=self.use_subcategory_var,
-            style="Dark.TCheckbutton"
-        )
-        use_subcategory_cb.grid(row=0, column=0, sticky='w', padx=5)
-        
-        # 创建树形视图框架
-        tree_frame = ttk.Frame(content_frame, style="Dark.TFrame")
-        tree_frame.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
-        
-        # 设置tree_frame的行列配置
-        tree_frame.columnconfigure(0, weight=1)
-        tree_frame.rowconfigure(0, weight=1)
-        
-        # 创建分类树形视图
-        columns = ('count',)
-        self.category_tree = ttk.Treeview(
-            tree_frame, 
-            columns=columns, 
-            show='tree headings', 
-            selectmode='browse',
-            style="Dark.Treeview"
-        )
-        
-        # 设置列标题
-        self.category_tree.heading('#0', text='分类名称', anchor='w')
-        self.category_tree.heading('count', text='文件数', anchor='center')
-        
-        # 设置列宽度
-        self.category_tree.column('#0', width=200, stretch=True)
-        self.category_tree.column('count', width=80, anchor='center', stretch=False)
-        
-        # 添加滚动条
-        category_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.category_tree.yview)
-        self.category_tree.configure(yscrollcommand=category_vsb.set)
-        
-        # 放置树形视图和滚动条
-        self.category_tree.grid(row=0, column=0, sticky='nsew')
-        category_vsb.grid(row=0, column=1, sticky='ns')
-        
-        # 创建按钮框架
-        button_frame = ttk.Frame(content_frame, style="Dark.TFrame")
-        button_frame.grid(row=2, column=0, sticky='ew', pady=5)
-        
-        # 设置button_frame的列配置
-        button_frame.columnconfigure(0, weight=1)
-        button_frame.columnconfigure(1, weight=1)
-        
-        # 添加分类按钮
-        self.manual_categorize_button = ttk.Button(
-            button_frame, 
-            text="手动分类", 
-            command=self._categorize_selected_files,
-            style="Dark.TButton"
-        )
-        self.manual_categorize_button.grid(row=0, column=0, sticky='ew', padx=(0, 2))
-        
-        self.auto_categorize_button = ttk.Button(
-            button_frame, 
-            text="自动分类", 
-            command=self._auto_categorize_files,
-            style="Dark.TButton"
-        )
-        self.auto_categorize_button.grid(row=0, column=1, sticky='ew', padx=(2, 0))
-        
-        # 创建统计框架
-        stats_frame = ttk.Frame(content_frame, style="Dark.TFrame")
-        stats_frame.grid(row=3, column=0, sticky='ew', pady=5)
-        
-        # 设置stats_frame的列配置
-        stats_frame.columnconfigure(0, weight=1)
-        
-        # 添加分类统计信息
-        self.category_stats_label = ttk.Label(
-            stats_frame, 
-            text="分类总数: 0", 
-            style="Dark.TLabel"
-        )
-        self.category_stats_label.grid(row=0, column=0, sticky='w', padx=5)
-        
-        # 绑定分类树选择事件
-        self.category_tree.bind("<<TreeviewSelect>>", self._on_category_selected)
-        
-        return category_frame
-
     def _on_tab_changed(self, event=None):
         """处理标签页切换事件"""
         # 记录标签页切换
@@ -1271,81 +662,6 @@ class AudioTranslatorGUI:
         """打开首选项对话框"""
         # 临时实现，后续可以添加实际的首选项对话框
         messagebox.showinfo("首选项", "首选项功能正在开发中...")
-
-    def _categorize_selected_files(self):
-        """手动分类选中的文件"""
-        # 确保有选中的文件
-        selected_files = self.file_manager.get_selected_files()
-        if not selected_files:
-            messagebox.showinfo("提示", "请先选择要分类的文件")
-            return
-            
-        # 获取所有分类
-        categories = self.category_manager.get_categories()
-        if not categories:
-            messagebox.showinfo("提示", "没有可用的分类数据")
-            return
-            
-        # 打开分类选择对话框
-        dialog = CategorySelectionDialog(
-            self.root, 
-            categories, 
-            selected_files,
-            self.category_manager.get_use_subcategory_var().get()
-        )
-        result = dialog.result
-        
-        # 如果用户选择了分类
-        if result and 'category_id' in result:
-            try:
-                # 获取选择的分类ID
-                category_id = result['category_id']
-                
-                # 移动文件到选定的分类
-                moved_files = self.category_manager.move_files_to_category(
-                    selected_files, 
-                    category_id
-                )
-                
-                # 批量更新文件状态
-                file_names = [os.path.basename(file) for file in moved_files]
-                self.file_manager.batch_update_status(file_names, "已分类")
-                
-                # 刷新文件树
-                self._refresh_file_tree()
-                
-                # 显示结果消息
-                messagebox.showinfo("分类完成", f"成功分类 {len(moved_files)} 个文件")
-                
-            except Exception as e:
-                messagebox.showerror("错误", f"分类文件失败: {str(e)}")
-                logger.error(f"分类文件失败: {e}")
-                
-    def _auto_categorize_files(self):
-        """自动分类选中的文件"""
-        # 确保有选中的文件
-        selected_files = self.file_manager.get_selected_files()
-        if not selected_files:
-            messagebox.showinfo("提示", "请先选择要分类的文件")
-            return
-            
-        # 打开自动分类对话框
-        dialog = AutoCategorizeDialog(
-            self.root,
-            selected_files,
-            self.file_manager,
-            self.category_manager
-        )
-        
-        if dialog.result.get('success', False):
-            # 刷新文件树
-            self._refresh_file_tree()
-            
-            # 更新分类树
-            self._populate_category_tree()
-            
-            # 显示成功消息
-            messagebox.showinfo("自动分类", f"成功完成 {len(selected_files)} 个文件的自动分类")
 
     def _populate_category_tree(self):
         """填充分类树"""
