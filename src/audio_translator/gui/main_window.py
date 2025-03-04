@@ -630,7 +630,7 @@ class AudioTranslatorGUI:
                 )
                 
                 # 递归添加子分类
-                self._add_subcategories(category.id, node_id)
+                self._add_subcategories(category.cat_id, node_id)
         
         # 更新统计信息
         self.category_stats_label.config(text=f"共{len(categories)}个分类")
@@ -659,7 +659,7 @@ class AudioTranslatorGUI:
             )
             
             # 递归添加子分类的子分类
-            self._add_subcategories(subcategory.id, node_id)
+            self._add_subcategories(subcategory.cat_id, node_id)
     
     def _create_status_bar(self):
         """创建状态栏"""
