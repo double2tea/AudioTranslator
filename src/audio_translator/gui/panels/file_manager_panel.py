@@ -44,33 +44,42 @@ class FileManagerPanel(SimplePanel):
         
         Args:
             parent: 父级窗口部件
-            file_manager: 文件管理器实例
+            file_manager: 文件管理器实例，如果为None则创建新实例
         """
-        # 初始化变量
+        # 先保存file_manager，因为我们需要在super().__init__之前定义它
         self.file_manager = file_manager
-        self.current_directory = None
+        
+        # 当前目录和选中的文件
+        self.current_directory = ""
         self.selected_files = []
         
-        # UI 变量 - 确保在调用父类初始化前定义
+        # 翻译状态跟踪
+        self.translated_count = 0
+        
+        # 列显示设置
+        self.column_visibility = {
+            "filename": tk.BooleanVar(value=True),
+            "translated_name": tk.BooleanVar(value=True),
+            "size": tk.BooleanVar(value=False),  # 默认隐藏
+            "type": tk.BooleanVar(value=False),  # 默认隐藏
+            "status": tk.BooleanVar(value=True)
+        }
+        
+        # UI 变量
         self.search_var = tk.StringVar()
-        self.filter_var = tk.StringVar(value="All")
+        self.filter_var = tk.StringVar(value="全部")
         
-        # UI 组件
-        self.file_tree = None
-        self.toolbar_frame = None
-        self.status_bar = None
-        
-        # 调用父类初始化方法
+        # 调用父类初始化方法 - 只传递parent参数
         super().__init__(parent)
-        
-        # 初始化事件管理器
-        self.event_manager = EventManager.get_instance()
         
         # 初始化UI
         self._init_ui()
         
-        # 绑定事件
+        # 绑定事件处理
         self._bind_events()
+        
+        # 更新状态栏
+        self._update_status_bar()
         
     def _init_ui(self) -> None:
         """初始化用户界面"""
@@ -89,42 +98,76 @@ class FileManagerPanel(SimplePanel):
         
     def _create_toolbar(self) -> None:
         """创建工具栏"""
-        # 工具栏容器
-        self.toolbar_frame = ttk.Frame(self)
-        self.toolbar_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 0))
+        # 工具栏框架
+        self.toolbar = ttk.Frame(self)
+        self.toolbar.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         
         # 刷新按钮
-        self.refresh_btn = ttk.Button(self.toolbar_frame, text="刷新", width=8)
+        self.refresh_btn = ttk.Button(self.toolbar, text="刷新", width=8)
         self.refresh_btn.pack(side=tk.LEFT, padx=2)
         create_tooltip(self.refresh_btn, "刷新文件列表")
         
-        # 翻译按钮 - 将在后续阶段添加实现
-        self.translate_btn = ttk.Button(self.toolbar_frame, text="翻译", width=8, state="disabled")
-        self.translate_btn.pack(side=tk.LEFT, padx=2)
-        create_tooltip(self.translate_btn, "翻译选中文件名")
+        # 全选按钮
+        self.select_all_btn = ttk.Button(self.toolbar, text="全选", width=8, command=self._select_all_files)
+        self.select_all_btn.pack(side=tk.LEFT, padx=2)
+        create_tooltip(self.select_all_btn, "选择所有文件")
         
-        # 编辑按钮 - 将在后续阶段添加实现
-        self.edit_btn = ttk.Button(self.toolbar_frame, text="编辑", width=8, state="disabled")
+        # 反选按钮
+        self.invert_select_btn = ttk.Button(self.toolbar, text="反选", width=8, command=self._invert_selection)
+        self.invert_select_btn.pack(side=tk.LEFT, padx=2)
+        create_tooltip(self.invert_select_btn, "反转选择状态")
+        
+        # 取消选择按钮
+        self.deselect_all_btn = ttk.Button(self.toolbar, text="取消选择", width=8, command=self._deselect_all)
+        self.deselect_all_btn.pack(side=tk.LEFT, padx=2)
+        create_tooltip(self.deselect_all_btn, "取消所有选择")
+        
+        # 分隔符
+        ttk.Separator(self.toolbar, orient="vertical").pack(side=tk.LEFT, padx=5, fill="y")
+        
+        # 编辑翻译按钮
+        self.edit_btn = ttk.Button(self.toolbar, text="编辑翻译", width=8, state="disabled", command=self._edit_translation)
         self.edit_btn.pack(side=tk.LEFT, padx=2)
-        create_tooltip(self.edit_btn, "编辑已翻译的文件名")
+        create_tooltip(self.edit_btn, "编辑已选文件的翻译")
+        
+        # 翻译按钮
+        self.translate_btn = ttk.Button(self.toolbar, text="翻译", width=8, state="disabled", command=self._translate_selected_files)
+        self.translate_btn.pack(side=tk.LEFT, padx=2)
+        create_tooltip(self.translate_btn, "翻译已选中的文件")
+        
+        # 分隔符
+        ttk.Separator(self.toolbar, orient="vertical").pack(side=tk.LEFT, padx=5, fill="y")
+        
+        # 列显示设置按钮
+        self.columns_btn = ttk.Button(self.toolbar, text="列显示", width=8, command=self._show_column_settings)
+        self.columns_btn.pack(side=tk.LEFT, padx=2)
+        create_tooltip(self.columns_btn, "设置显示的列")
+        
+        # 右侧区域 - 搜索和过滤
+        self.search_frame = ttk.Frame(self.toolbar)
+        self.search_frame.pack(side=tk.RIGHT, padx=2)
+        
+        # 过滤下拉框
+        ttk.Label(self.search_frame, text="过滤:").pack(side=tk.LEFT)
+        self.filter_combo = ttk.Combobox(
+            self.search_frame, 
+            textvariable=self.filter_var,
+            values=["全部", "未翻译", "已翻译", "翻译中", "翻译失败"],
+            width=10,
+            state="readonly"
+        )
+        self.filter_combo.pack(side=tk.LEFT, padx=2)
         
         # 搜索框
-        search_frame = ttk.Frame(self.toolbar_frame)
-        search_frame.pack(side=tk.RIGHT, padx=2)
+        ttk.Label(self.search_frame, text="搜索:").pack(side=tk.LEFT, padx=(5, 0))
+        self.search_entry = ttk.Entry(self.search_frame, textvariable=self.search_var, width=15)
+        self.search_entry.pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(search_frame, text="搜索:").pack(side=tk.LEFT)
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=15)
-        search_entry.pack(side=tk.LEFT, padx=2)
-        
-        # 过滤器
-        filter_frame = ttk.Frame(self.toolbar_frame)
-        filter_frame.pack(side=tk.RIGHT, padx=5)
-        
-        ttk.Label(filter_frame, text="过滤:").pack(side=tk.LEFT)
-        filter_combo = ttk.Combobox(filter_frame, textvariable=self.filter_var, width=10,
-                                    values=["All", "Translated", "Untranslated"])
-        filter_combo.pack(side=tk.LEFT, padx=2)
-        filter_combo.current(0)
+        # 清除搜索按钮
+        self.clear_search_btn = ttk.Button(self.search_frame, text="×", width=2, 
+                                          command=lambda: self.search_var.set(""))
+        self.clear_search_btn.pack(side=tk.LEFT)
+        create_tooltip(self.clear_search_btn, "清除搜索")
         
     def _create_file_tree(self) -> None:
         """创建文件树视图"""
@@ -171,6 +214,11 @@ class FileManagerPanel(SimplePanel):
         
         # 放置树形视图
         self.file_tree.grid(row=0, column=0, sticky="nsew")
+        
+        # 根据当前设置应用列可见性
+        for col in self.column_visibility:
+            if not self.column_visibility[col].get():
+                self.file_tree.column(col, width=0, stretch=False)
         
         # 创建文件树右键菜单
         self._create_file_context_menu()
@@ -232,22 +280,20 @@ class FileManagerPanel(SimplePanel):
         self.refresh_btn.config(command=self._refresh_files)
         
     def _on_file_selected(self, event) -> None:
-        """
-        处理文件选择事件
-        
-        Args:
-            event: 事件对象
-        """
+        """处理文件选择事件"""
         # 获取当前选中的项
         selected_items = self.file_tree.selection()
         
-        # 更新选中文件列表
+        # 清空之前的选择
         self.selected_files = []
+        
+        # 添加新选择的文件
         for item_id in selected_items:
-            item_values = self.file_tree.item(item_id, "values")
-            if item_values and len(item_values) > 4:  # 确保有足够的值
-                file_path = item_values[4]  # 文件路径存储在第5个位置
-                self.selected_files.append(file_path)
+            values = self.file_tree.item(item_id, "values")
+            if values and len(values) >= 5:  # 确保有足够的值
+                file_path = values[4]  # 第5个值是文件路径
+                if file_path and file_path not in self.selected_files:
+                    self.selected_files.append(file_path)
         
         # 更新状态栏
         self._update_status_bar()
@@ -387,44 +433,200 @@ class FileManagerPanel(SimplePanel):
     
     def load_directory(self, directory: str) -> None:
         """
-        加载指定目录的文件
+        加载指定目录中的文件
         
         Args:
             directory: 要加载的目录路径
         """
-        if not self.file_manager:
-            logger.error("文件管理器未初始化")
+        if not directory or not os.path.isdir(directory):
+            messagebox.showwarning("警告", f"无效的目录: {directory}")
             return
-            
+        
+        # 更新当前目录
         self.current_directory = directory
         
-        # 清空当前列表
-        for i in self.file_tree.get_children():
-            self.file_tree.delete(i)
-            
-        # 使用文件管理器加载文件
-        try:
-            # 定义加载完成的回调
+        # 清空文件树
+        for item in self.file_tree.get_children():
+            self.file_tree.delete(item)
+        
+        # 更新状态栏目录信息
+        self.status_dir_label.config(text=f"目录: {os.path.basename(directory)}")
+        
+        # 显示加载提示
+        self.file_tree.insert("", "end", text="正在加载...", values=("正在加载文件...", "", "", "", ""))
+        
+        # 使用文件管理器加载目录
+        if self.file_manager:
             def on_files_loaded(files):
+                # 清空加载提示
+                for item in self.file_tree.get_children():
+                    self.file_tree.delete(item)
+                
                 # 向树形视图添加文件
                 for file_data in files:
+                    # FileManager返回的是元组: (名称、大小、类型、状态、路径)
                     name, size, file_type, status, file_path = file_data
+                    
                     # 翻译结果初始为空
                     translated_name = ""
                     
-                    self.file_tree.insert("", "end", values=(name, translated_name, size, file_type, status, file_path))
+                    self.file_tree.insert(
+                        "", "end",
+                        values=(
+                            name,          # 文件名
+                            translated_name,  # 翻译结果
+                            size,          # 文件大小
+                            file_type,     # 文件类型
+                            status,        # 状态
+                            file_path      # 完整路径 (不显示但用于内部处理)
+                        )
+                    )
+                
+                # 应用列设置
+                self._apply_column_settings()
                 
                 # 更新状态栏
                 self._update_status_bar()
-                logger.debug(f"已加载 {len(files)} 个文件")
+                
+                logger.info(f"已加载目录: {directory}, 共 {len(files)} 个文件")
             
-            # 开始加载文件
+            # 异步加载文件
             self.file_manager.load_directory(directory, callback=on_files_loaded)
-            
-        except Exception as e:
-            logger.error(f"加载目录失败: {str(e)}")
-            messagebox.showerror("错误", f"加载目录失败: {str(e)}")
+        else:
+            messagebox.showerror("错误", "文件管理器未初始化")
+            logger.error("文件管理器未初始化，无法加载目录")
     
+    def _format_file_size(self, size_in_bytes: int) -> str:
+        """格式化文件大小显示"""
+        if size_in_bytes < 1024:
+            return f"{size_in_bytes} B"
+        elif size_in_bytes < 1024 * 1024:
+            return f"{size_in_bytes/1024:.1f} KB"
+        elif size_in_bytes < 1024 * 1024 * 1024:
+            return f"{size_in_bytes/(1024*1024):.1f} MB"
+        else:
+            return f"{size_in_bytes/(1024*1024*1024):.1f} GB"
+    
+    def _show_column_settings(self) -> None:
+        """显示列设置对话框"""
+        # 创建对话框
+        dialog = tk.Toplevel(self)
+        dialog.title("列显示设置")
+        dialog.geometry("300x200")
+        dialog.transient(self)  # 设置为模态对话框
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        
+        # 创建列表框
+        frame = ttk.Frame(dialog, padding=10)
+        frame.pack(fill="both", expand=True)
+        
+        # 列名和显示名称映射
+        column_labels = {
+            "filename": "文件名",
+            "translated_name": "翻译结果",
+            "size": "大小",
+            "type": "类型",
+            "status": "状态"
+        }
+        
+        # 创建复选框
+        for i, (col_id, label) in enumerate(column_labels.items()):
+            cb = ttk.Checkbutton(frame, text=label, variable=self.column_visibility[col_id])
+            cb.pack(anchor="w", pady=2)
+            
+            # 如果是必要列，禁用复选框 (文件名和翻译结果是必选的)
+            if col_id in ["filename", "translated_name"]:
+                cb.config(state="disabled")
+        
+        # 底部按钮
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(fill="x", pady=10)
+        
+        ttk.Button(button_frame, text="确定", command=lambda: self._apply_column_settings(dialog)).pack(side="right", padx=5)
+        ttk.Button(button_frame, text="取消", command=dialog.destroy).pack(side="right")
+    
+    def _apply_column_settings(self, dialog=None) -> None:
+        """应用列设置"""
+        # 更新树视图列的显示状态
+        for col, var in self.column_visibility.items():
+            if var.get():
+                # 显示列
+                self.file_tree.column(col, width=self.file_tree.column(col)['width'])
+            else:
+                # 隐藏列 (设置宽度为0)
+                self.file_tree.column(col, width=0)
+        
+        # 关闭对话框（如果有）
+        if dialog:
+            dialog.destroy()
+    
+    def _select_all_files(self) -> None:
+        """选择所有文件"""
+        # 清空当前选择
+        self.selected_files = []
+        
+        # 选择所有可见项
+        for item_id in self.file_tree.get_children():
+            self.file_tree.selection_add(item_id)
+            
+            # 获取文件路径并添加到选中列表
+            values = self.file_tree.item(item_id, "values")
+            if values and len(values) >= 5:  # 确保有足够的值
+                file_path = values[4]  # 第5个值是文件路径
+                if file_path and file_path not in self.selected_files:
+                    self.selected_files.append(file_path)
+        
+        # 更新UI状态
+        self._update_ui_state()
+        self._update_status_bar()
+    
+    def _invert_selection(self) -> None:
+        """反转选择状态"""
+        # 获取所有项
+        all_items = self.file_tree.get_children()
+        
+        # 获取当前选中的项
+        selected_items = self.file_tree.selection()
+        
+        # 清空当前选择
+        self.file_tree.selection_remove(*all_items)
+        self.selected_files = []
+        
+        # 选择之前未选中的项
+        for item_id in all_items:
+            if item_id not in selected_items:
+                self.file_tree.selection_add(item_id)
+                
+                # 获取文件路径并添加到选中列表
+                values = self.file_tree.item(item_id, "values")
+                if values and len(values) >= 5:
+                    file_path = values[4]
+                    if file_path and file_path not in self.selected_files:
+                        self.selected_files.append(file_path)
+        
+        # 更新UI状态
+        self._update_ui_state()
+        self._update_status_bar()
+    
+    def _deselect_all(self) -> None:
+        """取消所有选择"""
+        # 清空树视图选择
+        for item_id in self.file_tree.selection():
+            self.file_tree.selection_remove(item_id)
+        
+        # 清空选中文件列表
+        self.selected_files = []
+        
+        # 更新UI状态
+        self._update_ui_state()
+        self._update_status_bar()
+
     def get_selected_files(self) -> List[str]:
-        """获取当前选中的文件列表"""
+        """
+        获取当前选中的文件列表
+        
+        Returns:
+            包含所有选中文件路径的列表
+        """
         return self.selected_files.copy()  # 返回副本以防止外部修改 
