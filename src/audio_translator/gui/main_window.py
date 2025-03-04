@@ -615,7 +615,7 @@ class AudioTranslatorGUI:
         categories = list(self.category_manager.categories.values())
         
         # 按字母顺序排序
-        categories.sort(key=lambda x: x.name.lower())
+        categories.sort(key=lambda x: x.name_zh.lower())
         
         # 插入根分类
         for category in categories:
@@ -646,7 +646,7 @@ class AudioTranslatorGUI:
         subcategories = self.category_manager.get_subcategories(parent_id)
         
         # 按字母顺序排序
-        subcategories.sort(key=lambda x: x.name.lower())
+        subcategories.sort(key=lambda x: x.name_zh.lower())
         
         # 添加子分类
         for subcategory in subcategories:
