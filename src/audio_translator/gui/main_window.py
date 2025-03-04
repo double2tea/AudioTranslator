@@ -228,8 +228,8 @@ class AudioTranslatorGUI:
     def _create_toolbar(self):
         """创建工具栏"""
         # 创建工具栏框架
-        toolbar_frame = ttk.Frame(self.left_frame, padding=5)
-        toolbar_frame.pack(fill=tk.X)
+        toolbar_frame = ttk.Frame(self.left_paned)
+        self.left_paned.add(toolbar_frame, weight=1)
         
         # 左侧按钮区域
         button_frame = ttk.Frame(toolbar_frame)
@@ -299,9 +299,9 @@ class AudioTranslatorGUI:
     
     def _create_file_area(self):
         """创建文件区域"""
-        # 创建目录区域
-        dir_frame = ttk.Frame(self.left_frame)
-        dir_frame.pack(fill=tk.X, pady=(5, 0))
+        # 创建目录区域框架
+        dir_frame = ttk.Frame(self.left_paned)
+        self.left_paned.add(dir_frame, weight=1)
         
         # 当前目录标签
         ttk.Label(dir_frame, text="当前目录:").pack(side=tk.LEFT, padx=(0, 5))
@@ -325,8 +325,8 @@ class AudioTranslatorGUI:
     def _create_file_tree(self):
         """创建文件树控件"""
         # 创建文件树区域
-        file_frame = ttk.Frame(self.left_frame)
-        self.left_frame.add(file_frame, weight=3)
+        file_frame = ttk.Frame(self.left_paned)
+        self.left_paned.add(file_frame, weight=3)
         
         # 创建水平和垂直滚动条
         scroll_frame = ttk.Frame(file_frame)
