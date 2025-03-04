@@ -484,31 +484,120 @@ class UCSService(BaseService):
 
     def find_category_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """
-        根据名称查找分类
-        
-        支持英文名称、中文名称和同义词查找。
+        根据分类名称查找分类信息
         
         Args:
             name: 分类名称
             
         Returns:
-            分类信息，如果不存在则返回None
+            分类信息，如果找不到则返回None
         """
-        name = name.lower() if name.isascii() else name
+        # 先尝试精确匹配
+        for cat_id, cat_info in self._categories_cache.items():
+            if cat_info.get('name') == name or cat_info.get('name_zh') == name:
+                return cat_info
         
-        # 直接从名称缓存查找
-        if name in self._name_to_id_cache:
-            cat_id = self._name_to_id_cache[name]
-            return self.get_category(cat_id)
+        # 尝试不区分大小写的匹配
+        name_lower = name.lower()
+        for cat_id, cat_info in self._categories_cache.items():
+            if cat_info.get('name', '').lower() == name_lower or cat_info.get('name_zh', '') == name:
+                return cat_info
         
-        # 从同义词缓存查找
-        if name in self._synonym_to_id_cache:
-            cat_id = self._synonym_to_id_cache[name]
-            return self.get_category(cat_id)
+        # 没有找到匹配项
+        return None
         
-        # 从子类别缓存查找
-        if name in self._subcategory_to_id_cache:
-            cat_id = self._subcategory_to_id_cache[name]
-            return self.get_category(cat_id)
+    def guess_category(self, text: str) -> str:
+        """
+        根据文本内容猜测最匹配的分类ID
         
-        return None 
+        Args:
+            text: 需要分类的文本，通常是文件名或关键词
+            
+        Returns:
+            最匹配的分类ID，如果未找到合适分类则返回"SFXMisc"
+        """
+        if not text or not self._categories_cache:
+            return "SFXMisc"
+            
+        # 清理和处理输入文本
+        text = text.lower()
+        words = text.split()
+        
+        # 评分结果格式: {cat_id: score}
+        scores = {}
+        
+        # 对每个分类进行评分
+        for cat_id, cat_info in self._categories_cache.items():
+            score = 0
+            
+            # 获取分类和子分类名称
+            category = cat_info.get('name', '').lower()
+            subcategory = cat_info.get('subcategory', '').lower()
+            
+            # 获取同义词
+            synonyms = cat_info.get('synonyms', [])
+            synonyms = [s.lower() for s in synonyms]
+            
+            # 中文名称
+            category_zh = cat_info.get('name_zh', '')
+            subcategory_zh = cat_info.get('subcategory_zh', '')
+            
+            # 1. 检查分类名称完全匹配
+            if category in words:
+                score += 25
+                
+                # 如果是第一个词，加分
+                if words and words[0] == category:
+                    score += 10
+            
+            # 2. 检查子分类名称完全匹配
+            if subcategory and subcategory in words:
+                score += 35
+                
+                # 如果分类和子分类都匹配且顺序正确
+                if category in words:
+                    idx_cat = words.index(category)
+                    idx_sub = words.index(subcategory)
+                    if idx_sub > idx_cat:
+                        score += 20  # 顺序正确加分
+            
+            # 3. 检查同义词匹配
+            for synonym in synonyms:
+                if synonym in words:
+                    score += 15
+                    break
+            
+            # 4. 检查中文匹配
+            if category_zh and any(category_zh in word for word in words):
+                score += 10
+            
+            if subcategory_zh and any(subcategory_zh in word for word in words):
+                score += 15
+            
+            # 5. 检查部分匹配
+            for word in words:
+                # 部分匹配分类名称
+                if len(word) > 3 and word in category:
+                    score += 5
+                
+                # 部分匹配子分类名称
+                if subcategory and len(word) > 3 and word in subcategory:
+                    score += 8
+                
+                # 部分匹配同义词
+                for synonym in synonyms:
+                    if len(word) > 3 and word in synonym:
+                        score += 3
+                        break
+            
+            # 记录得分
+            scores[cat_id] = score
+        
+        # 找出得分最高的分类
+        best_cat_id = max(scores.items(), key=lambda x: x[1])[0] if scores else "SFXMisc"
+        
+        # 如果最高分太低，返回默认分类
+        if scores.get(best_cat_id, 0) < 10:
+            return "SFXMisc"
+            
+        return best_cat_id 
