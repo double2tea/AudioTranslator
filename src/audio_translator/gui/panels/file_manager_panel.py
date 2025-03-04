@@ -637,35 +637,54 @@ class FileManagerPanel(SimplePanel):
     
     def _invert_selection(self) -> None:
         """反转选择状态"""
-        # 获取所有项
+        # 获取所有项和当前选中的项
         all_items = self.file_tree.get_children()
+        selected_items = set(self.file_tree.selection())
         
-        # 获取当前选中的项
-        selected_items = self.file_tree.selection()
+        # 准备批量更新
+        items_to_select = []
+        items_with_new_values = []
+        new_selected_files = []
         
-        # 清空当前选择
+        # 关闭树视图重绘以提高性能
+        self.file_tree.config(selectmode='none')
+        
+        # 清空当前选择，避免触发选择事件
         self.file_tree.selection_remove(*all_items)
-        self.selected_files = []
         
-        # 选择之前未选中的项
+        # 处理所有项
         for item_id in all_items:
             values = list(self.file_tree.item(item_id, "values"))
             if len(values) >= 6:
                 file_path = values[5]
                 
+                # 反转选择状态
                 if item_id not in selected_items:
-                    self.file_tree.selection_add(item_id)
+                    items_to_select.append(item_id)
                     values[0] = "✓"  # 更新选择标记
-                    
-                    if file_path and file_path not in self.selected_files:
-                        self.selected_files.append(file_path)
+                    if file_path:
+                        new_selected_files.append(file_path)
                 else:
                     values[0] = ""  # 清除选择标记
                 
-                # 更新树项的值
-                self.file_tree.item(item_id, values=values)
+                # 收集需要更新的项
+                items_with_new_values.append((item_id, values))
         
-        # 更新UI状态
+        # 批量更新树项值
+        for item_id, values in items_with_new_values:
+            self.file_tree.item(item_id, values=values)
+        
+        # 批量应用选择
+        if items_to_select:
+            self.file_tree.selection_add(*items_to_select)
+        
+        # 恢复树视图的选择模式
+        self.file_tree.config(selectmode='extended')
+        
+        # 更新选择列表
+        self.selected_files = new_selected_files
+        
+        # 一次性更新UI状态
         self._update_ui_state()
         self._update_status_bar()
     
