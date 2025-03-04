@@ -578,9 +578,6 @@ class AudioTranslatorGUI:
         self.category_tree.heading("#0", text="分类名称")
         self.category_tree.heading("count", text="文件数")
         
-        # 填充分类树
-        self._populate_category_tree()
-        
         # 创建分类操作按钮
         button_frame = ttk.Frame(content_frame)
         button_frame.pack(fill=tk.X, pady=(10, 0))
@@ -604,6 +601,9 @@ class AudioTranslatorGUI:
         ttk.Label(stats_frame, text="分类统计:").pack(side=tk.LEFT)
         self.category_stats_label = ttk.Label(stats_frame, text="共0个分类")
         self.category_stats_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 填充分类树
+        self._populate_category_tree()
     
     def _populate_category_tree(self):
         """填充分类树"""
