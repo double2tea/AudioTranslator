@@ -12,7 +12,7 @@
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import logging
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple, Union
@@ -29,6 +29,7 @@ from ..services.api.model_service import ModelService
 from ..gui.panels.service_manager_panel import ServiceManagerPanel
 from ..gui.panels.file_manager_panel import FileManagerPanel
 from ..services.core.service_factory import ServiceFactory
+from ..utils.ui_utils import create_tooltip
 # 设置日志记录器
 logger = logging.getLogger(__name__)
 
@@ -339,6 +340,9 @@ class AudioTranslatorGUI:
         
         # 关联选项卡切换事件
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+        
+        # 现在填充分类树
+        self._populate_category_tree()
     
     def _create_toolbar(self):
         """创建工具栏"""
@@ -378,29 +382,145 @@ class AudioTranslatorGUI:
         status_filter.pack(side=tk.LEFT)
         status_filter.bind("<<ComboboxSelected>>", self._on_filter_change)
     
-    def _create_file_area(self, parent_frame):
-        """创建文件区域"""
-        # 创建文件区域容器框架
-        file_area_frame = ttk.LabelFrame(parent_frame, text="文件列表", style="Dark.TLabelframe")
-        file_area_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    def _create_file_area(self, parent):
+        """
+        创建文件管理区域
         
-        # 创建FileManagerPanel实例
+        Args:
+            parent: 父级容器
+            
+        Returns:
+            文件管理区域Frame
+        """
+        # 创建文件区域框架
+        file_area_frame = ttk.Frame(parent)
+        
+        # 创建文件管理面板
         self.file_manager_panel = FileManagerPanel(file_area_frame, self.file_manager)
         self.file_manager_panel.pack(fill=tk.BOTH, expand=True)
         
-        # 保留目录显示功能
-        # 创建目录显示框架
-        dir_frame = ttk.Frame(file_area_frame, style="Dark.TFrame", padding=(5, 5))
-        dir_frame.pack(fill=tk.X, side=tk.TOP, pady=(0, 5))
+        # 设置文件选择事件处理
+        self.file_manager_panel.file_tree.bind("<<TreeviewSelect>>", self._on_file_selected)
+        self.file_manager_panel.file_tree.bind("<Double-1>", self._on_file_double_click)
+        self.file_manager_panel.file_tree.bind("<Button-3>", self._show_file_context_menu)
         
-        # 添加目录标签
-        ttk.Label(dir_frame, text="当前目录:", style="Dark.TLabel").pack(side=tk.LEFT, padx=(0, 5))
+        # 设置搜索和过滤事件处理
+        self.file_manager_panel.search_var.trace("w", self._on_search_change)
+        self.file_manager_panel.filter_var.trace("w", self._on_filter_change)
         
-        # 添加目录路径显示
-        self.current_dir_var = tk.StringVar(value="未选择目录")
-        ttk.Label(dir_frame, textvariable=self.current_dir_var, style="Dark.TLabel").pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # 设置刷新按钮命令
+        self.file_manager_panel.refresh_btn.config(command=self._refresh_current_directory)
         
         return file_area_frame
+    
+    def _create_category_area(self, parent):
+        """
+        创建分类管理区域
+        
+        Args:
+            parent: 父级容器
+            
+        Returns:
+            分类管理区域Frame
+        """
+        # 创建分类区域框架
+        category_area_frame = ttk.Frame(parent)
+        
+        # 创建分类区域标题
+        title_frame = ttk.Frame(category_area_frame)
+        title_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        title_label = ttk.Label(title_frame, text="分类管理", font=("Helvetica", 10, "bold"))
+        title_label.pack(side=tk.LEFT, padx=5)
+        
+        # 创建操作按钮
+        actions_frame = ttk.Frame(category_area_frame)
+        actions_frame.pack(fill=tk.X, pady=5)
+        
+        # 添加分类按钮
+        self.add_category_btn = ttk.Button(actions_frame, text="添加分类", width=12, 
+                                           command=self._on_add_category)
+        self.add_category_btn.pack(side=tk.LEFT, padx=5)
+        create_tooltip(self.add_category_btn, "添加新的文件分类")
+        
+        # 删除分类按钮
+        self.del_category_btn = ttk.Button(actions_frame, text="删除分类", width=12,
+                                           command=self._on_delete_category)
+        self.del_category_btn.pack(side=tk.LEFT, padx=5)
+        create_tooltip(self.del_category_btn, "删除选定的分类")
+        
+        # 分类树区域
+        tree_frame = ttk.Frame(category_area_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # 创建滚动条
+        tree_scroll = ttk.Scrollbar(tree_frame)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 创建分类树
+        self.category_tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set, 
+                                          selectmode="browse", height=15)
+        self.category_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tree_scroll.config(command=self.category_tree.yview)
+        
+        # 配置分类树
+        self.category_tree["columns"] = ("count",)
+        self.category_tree.column("#0", width=180, minwidth=150)
+        self.category_tree.column("count", width=50, minwidth=50, anchor=tk.CENTER)
+        
+        self.category_tree.heading("#0", text="分类名称", anchor=tk.W)
+        self.category_tree.heading("count", text="数量", anchor=tk.CENTER)
+        
+        # 绑定事件
+        self.category_tree.bind("<<TreeviewSelect>>", self._on_category_selected)
+        self.category_tree.bind("<Double-1>", self._on_category_double_click)
+        self.category_tree.bind("<Button-3>", self._show_category_context_menu)
+        
+        # 创建分类信息区域
+        info_frame = ttk.LabelFrame(category_area_frame, text="分类信息")
+        info_frame.pack(fill=tk.X, pady=5, padx=5)
+        
+        # 分类信息表格
+        info_grid = ttk.Frame(info_frame)
+        info_grid.pack(fill=tk.X, padx=5, pady=5)
+        
+        # 分类路径
+        ttk.Label(info_grid, text="路径:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.category_path_var = tk.StringVar()
+        ttk.Label(info_grid, textvariable=self.category_path_var).grid(
+            row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        # 分类数量
+        ttk.Label(info_grid, text="文件数:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.category_count_var = tk.StringVar()
+        ttk.Label(info_grid, textvariable=self.category_count_var).grid(
+            row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        # 分类类型
+        ttk.Label(info_grid, text="类型:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
+        self.category_type_var = tk.StringVar()
+        ttk.Label(info_grid, textvariable=self.category_type_var).grid(
+            row=2, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        # 操作按钮区域
+        button_frame = ttk.Frame(category_area_frame)
+        button_frame.pack(fill=tk.X, pady=5)
+        
+        # 分类按钮
+        self.categorize_btn = ttk.Button(button_frame, text="分类文件", width=14, 
+                                         command=self._categorize_selected_files)
+        self.categorize_btn.pack(side=tk.LEFT, padx=5)
+        create_tooltip(self.categorize_btn, "将选中的文件分配到所选分类")
+        
+        # 自动分类按钮
+        self.auto_categorize_btn = ttk.Button(button_frame, text="自动分类", width=14,
+                                             command=self._auto_categorize_files)
+        self.auto_categorize_btn.pack(side=tk.LEFT, padx=5)
+        create_tooltip(self.auto_categorize_btn, "使用AI自动分类选中的文件")
+        
+        # 不再在这里调用 _populate_category_tree
+        
+        return category_area_frame
     
     def _on_file_selected(self, event):
         """
@@ -544,11 +664,70 @@ class AudioTranslatorGUI:
         # 更新状态栏
         self.status_message.set(f"已加载 {len(files)} 个文件")
     
+    def _create_status_bar(self):
+        """创建状态栏"""
+        # 创建状态栏框架
+        status_bar = ttk.Frame(self.root, relief=tk.SUNKEN, style="StatusBar.TFrame")
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # 创建状态消息标签
+        self.status_message = tk.StringVar()
+        self.status_message.set("就绪")
+        status_label = ttk.Label(
+            status_bar, 
+            textvariable=self.status_message, 
+            style="StatusBar.TLabel",
+            padding=(5, 2)
+        )
+        status_label.pack(side=tk.LEFT, fill=tk.X)
+        
+        # 创建版本信息标签
+        # 尝试从配置服务获取版本号，如果不可用则使用默认值
+        app_version = "1.0.0"
+        config_service = self.service_factory.get_service('config_service')
+        if config_service:
+            app_version = config_service.get('app_version', app_version)
+        
+        version_label = ttk.Label(
+            status_bar, 
+            text=f"版本: {app_version}", 
+            style="StatusBar.TLabel",
+            padding=(5, 2)
+        )
+        version_label.pack(side=tk.RIGHT)
+        
+        # 初始更新状态栏
+        self._update_status_bar()
+
     def _on_close(self):
         """处理窗口关闭事件"""
         # 在这里可以添加关闭前的清理工作
         logger.info("应用程序正在关闭")
+        
+        # 关闭服务
+        if hasattr(self, 'service_factory') and self.service_factory:
+            self.service_factory.shutdown_all_services()
+        
+        # 关闭窗口
         self.root.destroy()
+
+    def _bind_events(self):
+        """绑定事件处理函数"""
+        # 绑定窗口大小变化事件
+        self.root.bind("<Configure>", self._on_window_resize)
+        
+        # 绑定键盘快捷键
+        self.root.bind("<Control-o>", lambda e: self._open_directory())
+        self.root.bind("<Control-r>", lambda e: self._refresh_current_directory())
+        self.root.bind("<Control-q>", lambda e: self._on_close())
+        self.root.bind("<Control-p>", lambda e: self._on_preferences())
+
+    def _on_window_resize(self, event):
+        """处理窗口大小变化事件"""
+        # 只处理来自根窗口的事件
+        if event.widget == self.root:
+            # 可以在这里添加窗口大小变化的处理逻辑
+            pass
 
     def _create_menus(self):
         """创建菜单栏"""
@@ -638,72 +817,433 @@ class AudioTranslatorGUI:
                 self.service_manager_panel._refresh_services()
 
     def _on_category_selected(self, event):
-        """当分类树中选择某个分类时处理
+        """
+        处理分类选择事件
         
         Args:
             event: 事件对象
         """
-        # 获取选中的分类
-        selected_items = self.category_tree.selection()
-        if not selected_items:
+        # 获取选中的分类项
+        selection = self.category_tree.selection()
+        if not selection:
             return
         
-        # 获取分类ID和名称
-        category_id = selected_items[0]  # 使用item_id作为分类ID
+        # 获取分类ID
+        category_id = selection[0]
+        
+        # 如果选择的是根节点，清空信息显示
+        if category_id == "root":
+            self.category_path_var.set("")
+            self.category_count_var.set("")
+            self.category_type_var.set("")
+            return
+        
+        # 获取分类信息
+        category_info = self.category_tree.item(category_id, "values")
         category_name = self.category_tree.item(category_id, "text")
         
-        # 在这里可以添加选中分类后的处理逻辑，例如过滤文件列表等
-        logger.info(f"选中分类: {category_name} (ID: {category_id})")
+        # 显示分类信息
+        parent_id = self.category_tree.parent(category_id)
+        if parent_id:
+            parent_name = self.category_tree.item(parent_id, "text")
+            path = f"{parent_name}/{category_name}"
+        else:
+            path = category_name
+        
+        self.category_path_var.set(path)
+        
+        # 显示该分类下的文件数量
+        if category_info and len(category_info) > 0:
+            self.category_count_var.set(category_info[0])
+        else:
+            self.category_count_var.set("0")
+        
+        # 显示分类类型
+        if parent_id:
+            self.category_type_var.set("子分类")
+        else:
+            self.category_type_var.set("主分类")
+
+    def _on_category_double_click(self, event):
+        """
+        处理分类双击事件
+        
+        Args:
+            event: 事件对象
+        """
+        # 获取选中的分类项
+        selection = self.category_tree.selection()
+        if not selection:
+            return
+        
+        # 获取分类ID
+        category_id = selection[0]
+        
+        # 获取分类信息
+        category_name = self.category_tree.item(category_id, "text")
+        
+        # 如果是折叠状态，展开该分类；如果是展开状态，折叠该分类
+        if self.category_tree.item(category_id, "open"):
+            self.category_tree.item(category_id, open=False)
+        else:
+            self.category_tree.item(category_id, open=True)
+        
+        logger.info(f"分类 '{category_name}' 被双击")
+
+    def _show_category_context_menu(self, event):
+        """
+        显示分类右键菜单
+        
+        Args:
+            event: 事件对象
+        """
+        # 选中鼠标点击的项
+        item_id = self.category_tree.identify_row(event.y)
+        if item_id:
+            self.category_tree.selection_set(item_id)
+            
+            # 创建右键菜单
+            context_menu = tk.Menu(self.category_tree, tearoff=0)
+            
+            # 添加菜单项
+            context_menu.add_command(label="添加子分类", 
+                                     command=lambda: self._on_add_subcategory(item_id))
+            context_menu.add_command(label="重命名分类", 
+                                     command=lambda: self._on_rename_category(item_id))
+            context_menu.add_separator()
+            context_menu.add_command(label="删除分类", 
+                                     command=lambda: self._on_delete_category(item_id))
+            
+            # 显示菜单
+            try:
+                context_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                context_menu.grab_release()
+
+    def _on_add_category(self):
+        """添加新的主分类"""
+        # 弹出对话框，获取分类名称
+        category_name = simpledialog.askstring("添加分类", "请输入分类名称:", parent=self.root)
+        
+        # 如果用户取消或输入为空，直接返回
+        if not category_name or category_name.strip() == "":
+            return
+        
+        # 检查分类名称是否已存在
+        existing_categories = []
+        for item_id in self.category_tree.get_children():
+            item_text = self.category_tree.item(item_id, "text")
+            existing_categories.append(item_text)
+        
+        if category_name in existing_categories:
+            messagebox.showerror("错误", f"分类 '{category_name}' 已存在！", parent=self.root)
+            return
+
+        # 获取UCS服务
+        ucs_service = self.service_factory.get_service("ucs_service")
+        if not ucs_service:
+            messagebox.showerror("错误", "UCS服务不可用，无法添加分类！", parent=self.root)
+            return
+
+        # 添加分类
+        try:
+            # 创建分类字典
+            category_data = {
+                "name": category_name,
+                "path": category_name,
+                "parent": None,
+                "level": 0,
+                "count": 0
+            }
+            
+            # 添加到UCS服务
+            ucs_service.add_category(category_data)
+            
+            # 添加到分类树
+            category_id = self.category_tree.insert("", "end", text=category_name, values=("0"))
+            
+            # 选择新添加的分类
+            self.category_tree.selection_set(category_id)
+            self.category_tree.see(category_id)
+            
+            logger.info(f"成功添加分类: {category_name}")
+            messagebox.showinfo("成功", f"分类 '{category_name}' 添加成功！", parent=self.root)
+        except Exception as e:
+            logger.error(f"添加分类失败: {str(e)}")
+            messagebox.showerror("错误", f"添加分类失败: {str(e)}", parent=self.root)
+
+    def _on_add_subcategory(self, parent_id):
+        """
+        添加子分类
+        
+        Args:
+            parent_id: 父分类ID
+        """
+        # 获取父分类名称
+        parent_name = self.category_tree.item(parent_id, "text")
+        
+        # 弹出对话框，获取子分类名称
+        subcategory_name = simpledialog.askstring("添加子分类", 
+                                                 f"请输入 '{parent_name}' 的子分类名称:", 
+                                                 parent=self.root)
+        
+        # 如果用户取消或输入为空，直接返回
+        if not subcategory_name or subcategory_name.strip() == "":
+            return
+        
+        # 检查子分类名称是否已存在
+        existing_subcategories = []
+        for item_id in self.category_tree.get_children(parent_id):
+            item_text = self.category_tree.item(item_id, "text")
+            existing_subcategories.append(item_text)
+        
+        if subcategory_name in existing_subcategories:
+            messagebox.showerror("错误", f"子分类 '{subcategory_name}' 已存在于 '{parent_name}' 下！", 
+                                parent=self.root)
+            return
+        
+        # 获取UCS服务
+        ucs_service = self.service_factory.get_service("ucs_service")
+        if not ucs_service:
+            messagebox.showerror("错误", "UCS服务不可用，无法添加子分类！", parent=self.root)
+            return
+        
+        # 添加子分类
+        try:
+            # 创建子分类字典
+            subcategory_data = {
+                "name": subcategory_name,
+                "path": f"{parent_name}/{subcategory_name}",
+                "parent": parent_name,
+                "level": 1,
+                "count": 0
+            }
+            
+            # 添加到UCS服务
+            ucs_service.add_category(subcategory_data)
+            
+            # 添加到分类树
+            subcategory_id = self.category_tree.insert(parent_id, "end", text=subcategory_name, values=(subcategory.count if hasattr(subcategory, 'count') else 0,))
+            
+            # 展开父分类
+            self.category_tree.item(parent_id, open=True)
+            
+            # 选择新添加的子分类
+            self.category_tree.selection_set(subcategory_id)
+            self.category_tree.see(subcategory_id)
+            
+            logger.info(f"成功添加子分类: {parent_name}/{subcategory_name}")
+            messagebox.showinfo("成功", f"子分类 '{subcategory_name}' 添加成功！", parent=self.root)
+        except Exception as e:
+            logger.error(f"添加子分类失败: {str(e)}")
+            messagebox.showerror("错误", f"添加子分类失败: {str(e)}", parent=self.root)
+
+    def _on_rename_category(self, category_id):
+        """
+        重命名分类
+        
+        Args:
+            category_id: 分类ID
+        """
+        # 获取当前分类名称
+        current_name = self.category_tree.item(category_id, "text")
+        
+        # 获取父分类ID和名称
+        parent_id = self.category_tree.parent(category_id)
+        parent_name = ""
+        if parent_id:
+            parent_name = self.category_tree.item(parent_id, "text")
+        
+        # 弹出对话框，获取新的分类名称
+        new_name = simpledialog.askstring("重命名分类", 
+                                         f"请输入新的分类名称 (当前: '{current_name}'):", 
+                                         initialvalue=current_name, 
+                                         parent=self.root)
+        
+        # 如果用户取消或输入为空，或者名称没有变化，直接返回
+        if not new_name or new_name.strip() == "" or new_name == current_name:
+            return
+        
+        # 检查新名称是否已存在
+        existing_names = []
+        for item_id in self.category_tree.get_children(parent_id):
+            if item_id != category_id:  # 排除当前分类
+                item_text = self.category_tree.item(item_id, "text")
+                existing_names.append(item_text)
+        
+        if new_name in existing_names:
+            messagebox.showerror("错误", f"分类 '{new_name}' 已存在！", parent=self.root)
+            return
+        
+        # 获取UCS服务
+        ucs_service = self.service_factory.get_service("ucs_service")
+        if not ucs_service:
+            messagebox.showerror("错误", "UCS服务不可用，无法重命名分类！", parent=self.root)
+            return
+        
+        # 重命名分类
+        try:
+            # 构建分类路径
+            old_path = current_name
+            new_path = new_name
+            if parent_name:
+                old_path = f"{parent_name}/{current_name}"
+                new_path = f"{parent_name}/{new_name}"
+            
+            # 更新UCS服务中的分类
+            ucs_service.rename_category(old_path, new_path)
+            
+            # 更新分类树中的分类名称
+            self.category_tree.item(category_id, text=new_name)
+            
+            logger.info(f"成功重命名分类: '{old_path}' -> '{new_path}'")
+            messagebox.showinfo("成功", f"分类重命名成功: '{current_name}' -> '{new_name}'", parent=self.root)
+        except Exception as e:
+            logger.error(f"重命名分类失败: {str(e)}")
+            messagebox.showerror("错误", f"重命名分类失败: {str(e)}", parent=self.root)
+
+    def _on_delete_category(self, category_id=None):
+        """
+        删除分类
+        
+        Args:
+            category_id: 分类ID，如果为None则使用当前选中的分类
+        """
+        # 如果没有指定分类ID，使用当前选中的分类
+        if category_id is None:
+            selection = self.category_tree.selection()
+            if not selection:
+                messagebox.showinfo("提示", "请先选择要删除的分类！", parent=self.root)
+                return
+            category_id = selection[0]
+        
+        # 获取分类名称
+        category_name = self.category_tree.item(category_id, "text")
+        
+        # 检查是否有子分类
+        if self.category_tree.get_children(category_id):
+            messagebox.showerror("错误", f"分类 '{category_name}' 包含子分类，无法删除！请先删除所有子分类。", 
+                                parent=self.root)
+            return
+        
+        # 确认对话框
+        if not messagebox.askyesno("确认删除", f"确定要删除分类 '{category_name}' 吗？此操作不可撤销！", 
+                                  parent=self.root):
+            return
+        
+        # 获取UCS服务
+        ucs_service = self.service_factory.get_service("ucs_service")
+        if not ucs_service:
+            messagebox.showerror("错误", "UCS服务不可用，无法删除分类！", parent=self.root)
+            return
+        
+        # 获取父分类名称
+        parent_id = self.category_tree.parent(category_id)
+        parent_name = ""
+        if parent_id:
+            parent_name = self.category_tree.item(parent_id, "text")
+        
+        # 构建分类路径
+        category_path = category_name
+        if parent_name:
+            category_path = f"{parent_name}/{category_name}"
+        
+        # 删除分类
+        try:
+            # 从UCS服务中删除分类
+            ucs_service.delete_category(category_path)
+            
+            # 从分类树中删除分类
+            self.category_tree.delete(category_id)
+            
+            logger.info(f"成功删除分类: {category_path}")
+            messagebox.showinfo("成功", f"分类 '{category_name}' 删除成功！", parent=self.root)
+        except Exception as e:
+            logger.error(f"删除分类失败: {str(e)}")
+            messagebox.showerror("错误", f"删除分类失败: {str(e)}", parent=self.root)
+
+    def _open_directory(self):
+        """打开文件夹对话框并加载选择的目录"""
+        from tkinter import filedialog
+        directory = filedialog.askdirectory(title="选择文件夹")
+        if directory:
+            # 更新当前目录变量
+            self.current_directory.set(directory)
+            # 使用文件管理面板加载目录
+            self.file_manager_panel.load_directory(directory)
+            logger.info(f"已打开目录: {directory}")
+            
+    def _refresh_current_directory(self):
+        """刷新当前目录"""
+        # 获取当前目录
+        directory = self.current_directory.get()
+        
+        if not directory or directory == "":
+            # 如果没有选择目录，提示用户
+            messagebox.showinfo("提示", "请先选择一个目录")
+            return
+        
+        # 刷新文件管理面板
+        self.file_manager_panel.load_directory(directory)
+        
+        # 记录日志
+        logger.info(f"刷新目录: {directory}")
         
         # 更新状态栏
-        self.status_message.set(f"选中分类: {category_name}")
-        
-    def _on_preferences(self):
-        """打开首选项对话框"""
-        # 临时实现，后续可以添加实际的首选项对话框
-        messagebox.showinfo("首选项", "首选项功能正在开发中...")
-
+        self._update_status_bar()
+            
     def _populate_category_tree(self):
-        """填充分类树"""
-        # 清空分类树
+        """加载分类树数据"""
+        # 清空现有分类树
         for item in self.category_tree.get_children():
             self.category_tree.delete(item)
         
-        # 获取分类列表
-        categories = list(self.category_manager.categories.values())
+        # 获取分类管理器
+        category_manager = CategoryManager(self.root)
+        if not category_manager:
+            logger.error("无法获取分类管理器，分类树加载失败")
+            return
         
-        # 按字母顺序排序
-        categories.sort(key=lambda x: x.name_zh.lower())
+        # 获取所有分类
+        categories = category_manager.get_all_categories()
+        if not categories:
+            logger.warning("未找到任何分类")
+            return
         
-        # 插入根分类
-        for category in categories:
-            # 只显示根分类
-            if not category.subcategory:
-                # 创建根节点
-                node_id = self.category_tree.insert(
-                    "", 
-                    "end", 
-                    text=category.name_zh, 
-                    values=(category.count if hasattr(category, 'count') else 0,)
-                )
+        # 添加根分类
+        for cat_id, category in categories.items():
+            if not category.subcategory:  # 只添加根分类
+                # 创建分类节点
+                node_id = self.category_tree.insert("", "end", text=category.name_zh, 
+                                                   values=(category.count if hasattr(category, 'count') else 0,))
                 
                 # 递归添加子分类
-                self._add_subcategories(category.cat_id, node_id)
+                self._add_subcategories(cat_id, node_id, category_manager)
         
-        # 更新统计信息
-        self.category_stats_label.config(text=f"共{len(categories)}个分类")
+        # 更新标题显示分类数量
+        title_text = f"分类管理 (共{len(categories)}个分类)"
+        # 直接更新分类区域的标题
+        for widget in self.category_area.winfo_children():
+            if isinstance(widget, ttk.LabelFrame) or isinstance(widget, ttk.Frame):
+                for child in widget.winfo_children():
+                    if isinstance(child, ttk.Label) and "分类管理" in child.cget("text"):
+                        child.config(text=title_text)
+                        break
     
-    def _add_subcategories(self, parent_id, tree_parent):
+    def _add_subcategories(self, parent_id, tree_parent, category_manager):
         """递归添加子分类
         
         Args:
             parent_id: 父分类ID
             tree_parent: 树中的父节点ID
+            category_manager: 分类管理器实例
         """
         # 获取子分类
-        subcategories = self.category_manager.get_subcategories(parent_id)
+        subcategories = category_manager.get_subcategories(parent_id)
+        if not subcategories:
+            return
         
-        # 按字母顺序排序
+        # 按名称排序
         subcategories.sort(key=lambda x: x.name_zh.lower())
         
         # 添加子分类
@@ -712,9 +1252,9 @@ class AudioTranslatorGUI:
             node_id = self.category_tree.insert(
                 tree_parent, 
                 "end", 
-                text=subcategory.name_zh,  # 使用中文名称
+                text=subcategory.name_zh,
                 values=(subcategory.count if hasattr(subcategory, 'count') else 0,)
             )
             
             # 递归添加子分类的子分类
-            self._add_subcategories(subcategory.cat_id, node_id) 
+            self._add_subcategories(subcategory.cat_id, node_id, category_manager) 

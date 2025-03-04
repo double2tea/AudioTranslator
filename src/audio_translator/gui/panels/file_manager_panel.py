@@ -20,12 +20,12 @@ from typing import Dict, Any, Optional, List, Tuple, Union, Callable
 from ...managers.file_manager import FileManager
 from ...utils.ui_utils import create_tooltip, ScrollableFrame
 from ...utils.events import EventManager, Event
-from ..base import BasePanel
+from ..base import SimplePanel
 
 # 设置日志记录器
 logger = logging.getLogger(__name__)
 
-class FileManagerPanel(ttk.Frame):
+class FileManagerPanel(SimplePanel):
     """
     文件管理面板
     
@@ -46,23 +46,25 @@ class FileManagerPanel(ttk.Frame):
             parent: 父级窗口部件
             file_manager: 文件管理器实例
         """
-        # 调用父类初始化方法
-        super().__init__(parent)
-        
-        # 初始化事件管理器
-        self.event_manager = EventManager.get_instance()
-        
-        # 设置文件管理器
+        # 初始化变量
         self.file_manager = file_manager
         self.current_directory = None
         self.selected_files = []
+        
+        # UI 变量 - 确保在调用父类初始化前定义
+        self.search_var = tk.StringVar()
+        self.filter_var = tk.StringVar(value="All")
         
         # UI 组件
         self.file_tree = None
         self.toolbar_frame = None
         self.status_bar = None
-        self.search_var = tk.StringVar()
-        self.filter_var = tk.StringVar(value="All")
+        
+        # 调用父类初始化方法
+        super().__init__(parent)
+        
+        # 初始化事件管理器
+        self.event_manager = EventManager.get_instance()
         
         # 初始化UI
         self._init_ui()
