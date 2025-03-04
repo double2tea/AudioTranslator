@@ -70,7 +70,19 @@ class AudioTranslatorGUI:
         
         # 初始化管理器
         self.file_manager = FileManager()
+        
+        # 获取UCS服务实例用于分类管理
+        self.ucs_service = service_factory.get_service("ucs_service")
+        if not self.ucs_service:
+            logger.error("无法获取UCS服务，分类功能可能无法正常工作")
+            messagebox.showerror("初始化错误", "无法获取UCS服务，分类功能可能无法正常工作")
+        
+        # 初始化分类管理器并传入UCS服务和根窗口
         self.category_manager = CategoryManager(self.root)
+        
+        # 手动将UCS服务传递给分类管理器
+        if hasattr(self.category_manager, 'set_ucs_service') and self.ucs_service:
+            self.category_manager.set_ucs_service(self.ucs_service)
         
         # 初始化变量
         self.current_directory = tk.StringVar(value=str(self.file_manager.current_directory))
@@ -211,6 +223,9 @@ class AudioTranslatorGUI:
         if not service_manager:
             logger.error("无法获取服务管理器，服务管理面板可能无法正常工作")
             messagebox.showerror("初始化错误", "无法获取服务管理器，服务管理面板可能无法正常工作")
+        
+        # 确保分类树被填充
+        self._populate_category_tree()
         
         # 创建服务管理面板
         self.service_panel = ServiceManagerPanel(self.service_tab, service_manager)
@@ -764,6 +779,11 @@ class AudioTranslatorGUI:
             if hasattr(self, 'status_bar'):
                 self.status_bar.update_status("UI已刷新")
             
+            # 刷新分类树
+            if hasattr(self, 'category_tree'):
+                self._populate_category_tree()
+                logger.info("分类树已刷新")
+            
             # 如果有其他需要刷新的UI组件，在这里添加
             
             logger.info("UI已刷新")
@@ -899,7 +919,7 @@ class AudioTranslatorGUI:
             node_id = self.category_tree.insert(
                 tree_parent, 
                 "end", 
-                text=subcategory.name, 
+                text=subcategory.name_zh,  # 使用中文名称
                 values=(subcategory.count if hasattr(subcategory, 'count') else 0,)
             )
             

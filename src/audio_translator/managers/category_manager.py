@@ -98,6 +98,11 @@ class CategoryManager:
         """
         self.parent = parent
         self.categories: Dict[str, Category] = {}
+        
+        # UCS服务实例
+        self.ucs_service = None
+        
+        # 先加载本地分类
         self.load_categories()
         
         # 自动分类选项
@@ -173,6 +178,51 @@ class CategoryManager:
             
         except Exception as e:
             logger.error(f"加载分类数据失败: {e}")
+    
+    def set_ucs_service(self, ucs_service) -> None:
+        """
+        设置UCS服务实例并从中加载分类
+        
+        Args:
+            ucs_service: UCS服务实例
+        """
+        try:
+            self.ucs_service = ucs_service
+            
+            if not self.ucs_service:
+                logger.warning("提供的UCS服务实例为空")
+                return
+                
+            # 获取UCS服务中的所有分类
+            if not hasattr(self.ucs_service, '_categories_cache'):
+                logger.warning("UCS服务中没有可用的分类数据缓存")
+                return
+                
+            ucs_categories = self.ucs_service._categories_cache
+            if not ucs_categories:
+                logger.warning("UCS服务中没有可用的分类数据")
+                return
+                
+            # 清空现有分类
+            self.categories.clear()
+            
+            # 转换UCS分类格式为本地格式
+            for cat_id, cat_data in ucs_categories.items():
+                category = Category(
+                    cat_id=cat_id,
+                    name_en=cat_data.get('name', ''),
+                    name_zh=cat_data.get('name_zh', ''),
+                    subcategory=cat_data.get('subcategory', ''),
+                    subcategory_zh=cat_data.get('subcategory_zh', ''),
+                    synonyms_en=cat_data.get('synonyms', []),
+                    synonyms_zh=cat_data.get('synonyms_zh', [])
+                )
+                self.categories[cat_id] = category
+                
+            logger.info(f"从UCS服务成功加载 {len(self.categories)} 个分类")
+            
+        except Exception as e:
+            logger.error(f"从UCS服务加载分类数据失败: {e}")
     
     def guess_category(self, filename: str) -> Dict[str, Any]:
         """
@@ -422,13 +472,30 @@ class CategoryManager:
         return self.use_subcategory_var
     
     def get_all_categories(self) -> Dict[str, Category]:
-        """
-        获取所有分类
-        
-        Returns:
-            所有分类的字典
-        """
+        """获取所有分类"""
         return self.categories
+    
+    def get_subcategories(self, parent_id: str) -> List[Category]:
+        """
+        获取指定父分类的所有子分类
+        
+        Args:
+            parent_id: 父分类ID
+            
+        Returns:
+            子分类列表
+        """
+        subcategories = []
+        
+        # 遍历所有分类，找出父分类为parent_id的分类
+        for cat_id, category in self.categories.items():
+            parent_cat_id = category.subcategory.split('.')[0] if category.subcategory else ''
+            
+            # 如果父分类ID匹配，则添加到子分类列表
+            if parent_cat_id == parent_id:
+                subcategories.append(category)
+                
+        return subcategories
     
     def search_categories(self, query: str) -> Dict[str, Category]:
         """
