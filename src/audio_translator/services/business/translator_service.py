@@ -207,20 +207,30 @@ class TranslatorService(BaseService):
         # 暂时不做任何操作
         pass
     
-    def translate_filename(self, filename: str) -> str:
+    def translate_filename(self, filename: str, file_path: str = None) -> Dict[str, str]:
         """
         翻译音效文件名
         
         Args:
             filename: 原始文件名
+            file_path: 文件路径，可选
             
         Returns:
-            翻译后的文件名
+            包含翻译结果的字典，格式为:
+            {
+                'original_name': 原文件名,
+                'translated_name': 翻译后的文件名,
+                'english_name': 英文描述,
+                'chinese_name': 中文描述,
+                'category_id': 分类ID,
+                'file_path': 文件路径
+            }
         """
         try:
             # 检查缓存
-            if filename in self.translation_cache:
-                return self.translation_cache[filename]
+            cache_key = f"{filename}_{file_path}" if file_path else filename
+            if cache_key in self.translation_cache:
+                return self.translation_cache[cache_key]
             
             # 1. 预处理文件名
             name = self._preprocess_filename(filename)
@@ -231,7 +241,18 @@ class TranslatorService(BaseService):
             # 3. 使用 AI 一次性生成英文和中文描述
             descriptions = self._get_descriptions(name)
             if not descriptions:
-                return filename
+                # 返回包含原始文件名的结果
+                result = {
+                    'original_name': filename,
+                    'translated_name': filename,
+                    'english_name': '',
+                    'chinese_name': '未翻译',
+                    'category_id': 'SFXMisc',
+                    'file_path': file_path
+                }
+                self.translation_cache[cache_key] = result
+                return result
+                
             fx_name, translated = descriptions
             
             # 4. 格式化 FXname（处理驼峰式命名）
@@ -263,16 +284,35 @@ class TranslatorService(BaseService):
             if not category_info:
                 category_info = {'subcategory_zh': '其他'}
                 
-            result = f"{cat_id}_{category_info.get('subcategory_zh', '其他')}_{fx_name_formatted}_{zh_desc}_{parts.get('number', '001')}"
+            translated_filename = f"{cat_id}_{category_info.get('subcategory_zh', '其他')}_{fx_name_formatted}_{zh_desc}_{parts.get('number', '001')}"
+            
+            # 返回包含完整翻译信息的字典
+            result = {
+                'original_name': filename,
+                'translated_name': translated_filename,
+                'english_name': fx_name_formatted,
+                'chinese_name': zh_desc,
+                'category_id': cat_id,
+                'file_path': file_path
+            }
             
             # 保存到缓存
-            self.translation_cache[filename] = result
+            self.translation_cache[cache_key] = result
             
             return result
             
         except Exception as e:
             logger.error(f"翻译文件名失败: {e}")
-            return filename
+            # 返回包含原始文件名的结果
+            result = {
+                'original_name': filename,
+                'translated_name': filename,
+                'english_name': '',
+                'chinese_name': '翻译失败',
+                'category_id': 'SFXMisc',
+                'file_path': file_path
+            }
+            return result
     
     def _preprocess_filename(self, filename: str) -> str:
         """

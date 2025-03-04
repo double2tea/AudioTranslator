@@ -58,6 +58,12 @@ class FileManager:
         # 文件加载回调
         self._loading_callback = None
         
+        # 文件缓存
+        self._file_cache = {}
+        
+        # 已终止标志，用于取消异步操作
+        self._terminated = False
+        
         logger.debug("FileManager initialized")
     
     def load_directory(self, directory: str, callback: Optional[Callable] = None) -> List[Tuple[str, str, str, str, str]]:
@@ -145,7 +151,7 @@ class FileManager:
             logger.error(f"内部加载文件夹失败: {str(e)}", exc_info=True)
             return []
     
-    def _process_file(self, file_path: str) -> Optional[Tuple[str, str, str, str, str]]:
+    def _process_file(self, file_path: str) -> Optional[Tuple[str, str, str, str, str, str]]:
         """Process a single file to extract metadata.
         
         Args:
@@ -155,18 +161,33 @@ class FileManager:
             File metadata tuple or None if not a supported audio file
         """
         try:
-            file_name = os.path.basename(file_path)
-            file_type = os.path.splitext(file_name)[1].lower()
+            # 检查缓存
+            if str(file_path) in self._file_cache:
+                return self._file_cache[str(file_path)]
+                
+            # 处理文件信息
+            name = os.path.basename(file_path)
+            file_type = os.path.splitext(name)[1].lower()
             
             # 检查是否为支持的音频文件
-            if file_type in self.audio_extensions:
-                # 获取文件大小
-                size = os.path.getsize(file_path)
-                size_str = self._format_size(size)
-                
-                return (file_name, size_str, file_type, "未处理", file_path)
+            if file_type not in self.audio_extensions:
+                return None
             
-            return None
+            # 获取文件大小
+            size = os.path.getsize(file_path)
+            size_str = self._format_size(size)
+            
+            # 为每个文件分配唯一ID
+            file_id = str(hash(file_path))
+            
+            # 添加翻译名称字段，初始为空字符串
+            translated_name = ""
+            
+            # 缓存结果
+            result = (file_id, name, size_str, file_type, translated_name, "未处理", file_path)
+            self._file_cache[str(file_path)] = result
+            
+            return result
         except Exception as e:
             logger.debug(f"处理文件失败: {file_path}, 错误: {str(e)}")
             return None
@@ -196,7 +217,7 @@ class FileManager:
         """
         return self.selected_files
     
-    def get_file_info(self, file_path: str) -> Optional[Tuple[str, str, str, str, str]]:
+    def get_file_info(self, file_path: str) -> Optional[Tuple[str, str, str, str, str, str]]:
         """Get information about a specific file.
         
         Args:
@@ -205,6 +226,11 @@ class FileManager:
         Returns:
             File metadata tuple (name, size_str, file_type, status, file_path) or None if not found
         """
+        # 从缓存中获取
+        if file_path in self._file_cache:
+            return self._file_cache[file_path]
+            
+        # 从文件列表中查找
         for file_info in self.files:
             if file_info[4] == file_path:
                 return file_info
@@ -219,10 +245,51 @@ class FileManager:
         """
         for i, file_info in enumerate(self.files):
             if file_info[4] == file_path:
-                # 创建新的元组，更新状态
-                self.files[i] = (file_info[0], file_info[1], file_info[2], status, file_info[4])
+                # 创建新的元组，更新状态，保留翻译结果
+                self.files[i] = (file_info[0], file_info[1], file_info[2], 
+                               status, file_info[4], file_info[5] if len(file_info) > 5 else "")
                 logger.debug(f"已更新文件状态: {file_path} -> {status}")
                 break
+    
+    def update_file_translation(self, file_path: str, translated_name: str) -> bool:
+        """
+        更新文件的翻译结果
+        
+        Args:
+            file_path: 文件路径
+            translated_name: 翻译后的名称
+            
+        Returns:
+            是否更新成功
+        """
+        # 更新缓存
+        for i, file_info in enumerate(self.files):
+            if len(file_info) >= 5 and file_info[4] == file_path:
+                # 更新翻译名称
+                # 检查元组长度
+                if len(file_info) >= 6:
+                    # 已有翻译字段，创建新元组
+                    updated_file_info = (
+                        file_info[0],  # name
+                        file_info[1],  # size
+                        file_info[2],  # type
+                        "已翻译",      # status
+                        file_info[4],  # path
+                        translated_name # translated_name
+                    )
+                else:
+                    # 没有翻译字段，扩展元组
+                    updated_file_info = file_info[:4] + ("已翻译", file_info[4], translated_name)
+                
+                # 更新列表项
+                self.files[i] = updated_file_info
+                
+                # 更新缓存
+                self._file_cache[file_path] = updated_file_info
+                
+                return True
+                
+        return False
     
     def batch_update_status(self, file_paths: List[str], status: str) -> int:
         """Update the status of multiple files at once.
@@ -243,11 +310,46 @@ class FileManager:
             if path in path_to_index:
                 index = path_to_index[path]
                 file_info = self.files[index]
-                self.files[index] = (file_info[0], file_info[1], file_info[2], status, file_info[4])
+                # 更新状态，保留翻译结果
+                self.files[index] = (file_info[0], file_info[1], file_info[2], 
+                                  status, file_info[4], file_info[5] if len(file_info) > 5 else "")
                 count += 1
         
         if count > 0:
             logger.debug(f"批量更新了 {count} 个文件状态为: {status}")
+        
+        return count
+    
+    def batch_update_translations(self, file_paths: List[str], translations: List[str]) -> int:
+        """批量更新文件的翻译结果
+        
+        Args:
+            file_paths: 要更新的文件路径列表
+            translations: 对应的翻译结果列表
+            
+        Returns:
+            更新的文件数量
+        """
+        if len(file_paths) != len(translations):
+            logger.error("文件路径列表和翻译结果列表长度不一致")
+            return 0
+            
+        count = 0
+        
+        # 创建文件路径到索引的映射以加快查找
+        path_to_index = {file_info[4]: i for i, file_info in enumerate(self.files)}
+        
+        for path, translation in zip(file_paths, translations):
+            if path in path_to_index:
+                index = path_to_index[path]
+                file_info = self.files[index]
+                # 更新翻译结果，保留其他字段
+                self.files[index] = (file_info[0], file_info[1], file_info[2], 
+                                  file_info[3], file_info[4], translation)
+                count += 1
+        
+        if count > 0:
+            logger.debug(f"批量更新了 {count} 个文件的翻译结果")
         
         return count
     
@@ -317,7 +419,7 @@ class FileManager:
         # 重新排序文件列表
         self.files = self._sort_files(self.files)
     
-    def _sort_files(self, file_list: List[Tuple[str, str, str, str, str]]) -> List[Tuple[str, str, str, str, str]]:
+    def _sort_files(self, file_list: List[Tuple[str, str, str, str, str, str]]) -> List[Tuple[str, str, str, str, str, str]]:
         """Sort files according to current sorting settings.
         
         Args:
@@ -345,7 +447,8 @@ class FileManager:
             return sorted(file_list, key=lambda x: size_to_bytes(x[1]), reverse=self.sorting_reverse)
         else:
             # 其他列直接按字符串排序
-            return sorted(file_list, key=lambda x: x[self.sorting_key].lower(), reverse=self.sorting_reverse)
+            # 处理可能存在的空字符串
+            return sorted(file_list, key=lambda x: x[self.sorting_key].lower() if x[self.sorting_key] else "", reverse=self.sorting_reverse)
     
     def _format_size(self, size: int) -> str:
         """Format file size for display.
@@ -372,7 +475,8 @@ class FileManager:
         stats = {
             'total': len(self.files),
             'by_extension': {},
-            'by_status': {}
+            'by_status': {},
+            'translated': sum(1 for file_info in self.files if len(file_info) > 5 and file_info[5])  # 统计已翻译文件数量
         }
         
         # 按扩展名统计
@@ -391,4 +495,89 @@ class FileManager:
             else:
                 stats['by_status'][status] = 1
         
-        return stats 
+        return stats
+    
+    def get_file_property(self, file_id: str, property_name: str) -> Optional[str]:
+        """获取文件的指定属性
+        
+        Args:
+            file_id: 文件ID
+            property_name: 属性名称（name, size, type, translated_name, status, path）
+            
+        Returns:
+            属性值，如果不存在则返回None
+        """
+        try:
+            # 定义属性索引映射
+            property_map = {
+                'id': 0,
+                'name': 1,
+                'size': 2,
+                'type': 3,
+                'translated_name': 4,
+                'status': 5,
+                'path': 6
+            }
+            
+            # 检查属性名是否有效
+            if property_name not in property_map:
+                logger.error(f"请求的属性名称无效: {property_name}")
+                return None
+            
+            # 找到对应的文件
+            for file_info in self.files:
+                if file_info[0] == file_id:
+                    return file_info[property_map[property_name]]
+            
+            logger.warning(f"找不到ID为 {file_id} 的文件")
+            return None
+            
+        except Exception as e:
+            logger.error(f"获取文件属性失败: {str(e)}")
+            return None
+    
+    def update_file_property(self, file_id: str, property_name: str, value: str) -> bool:
+        """更新文件的指定属性
+        
+        Args:
+            file_id: 文件ID
+            property_name: 属性名称（name, translated_name, status）
+            value: 新的属性值
+            
+        Returns:
+            更新是否成功
+        """
+        try:
+            # 定义可更新的属性索引映射
+            property_map = {
+                'name': 1,
+                'translated_name': 4,
+                'status': 5
+            }
+            
+            # 检查属性名是否有效且可更新
+            if property_name not in property_map:
+                logger.error(f"请求的属性名称无效或不可更新: {property_name}")
+                return False
+            
+            # 更新文件信息
+            for i, file_info in enumerate(self.files):
+                if file_info[0] == file_id:
+                    # 创建一个新的元组，替换指定位置的值
+                    new_info = list(file_info)
+                    new_info[property_map[property_name]] = value
+                    self.files[i] = tuple(new_info)
+                    
+                    # 更新缓存
+                    file_path = file_info[6]
+                    self._file_cache[str(file_path)] = tuple(new_info)
+                    
+                    logger.debug(f"已更新文件 {file_id} 的 {property_name} 为 {value}")
+                    return True
+            
+            logger.warning(f"找不到ID为 {file_id} 的文件")
+            return False
+            
+        except Exception as e:
+            logger.error(f"更新文件属性失败: {str(e)}")
+            return False 

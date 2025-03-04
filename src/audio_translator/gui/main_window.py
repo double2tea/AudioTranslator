@@ -66,6 +66,11 @@ class AudioTranslatorGUI:
         self.file_service = service_factory.get_file_service()
         self.audio_service = service_factory.get_audio_service()
         
+        # 获取翻译服务
+        self.translator_service = service_factory.get_translator_service()
+        if not self.translator_service:
+            logger.warning("无法获取翻译服务，翻译功能可能无法正常工作")
+        
         if not self.file_service or not self.audio_service:
             logger.error("无法获取基础服务，应用程序可能无法正常工作")
             messagebox.showerror("初始化错误", "无法获取基础服务，应用程序可能无法正常工作")
@@ -395,21 +400,9 @@ class AudioTranslatorGUI:
         # 创建文件区域框架
         file_area_frame = ttk.Frame(parent)
         
-        # 创建文件管理面板
-        self.file_manager_panel = FileManagerPanel(file_area_frame, self.file_manager)
+        # 创建文件管理面板，传递翻译服务
+        self.file_manager_panel = FileManagerPanel(file_area_frame, self.file_manager, self.translator_service)
         self.file_manager_panel.pack(fill=tk.BOTH, expand=True)
-        
-        # 设置文件选择事件处理
-        self.file_manager_panel.file_tree.bind("<<TreeviewSelect>>", self._on_file_selected)
-        self.file_manager_panel.file_tree.bind("<Double-1>", self._on_file_double_click)
-        self.file_manager_panel.file_tree.bind("<Button-3>", self._show_file_context_menu)
-        
-        # 设置搜索和过滤事件处理
-        self.file_manager_panel.search_var.trace("w", self._on_search_change)
-        self.file_manager_panel.filter_var.trace("w", self._on_filter_change)
-        
-        # 设置刷新按钮命令
-        self.file_manager_panel.refresh_btn.config(command=self._refresh_current_directory)
         
         return file_area_frame
     
@@ -649,12 +642,14 @@ class AudioTranslatorGUI:
     def _on_search_change(self, *args):
         """当搜索文本变化时过滤文件列表"""
         # 将由FileManagerPanel处理
-        pass
+        if hasattr(self, 'file_manager_panel'):
+            self.file_manager_panel._on_search_change(*args)
         
-    def _on_filter_change(self, event):
+    def _on_filter_change(self, *args):
         """当过滤条件变化时过滤文件列表"""
         # 将由FileManagerPanel处理
-        pass
+        if hasattr(self, 'file_manager_panel'):
+            self.file_manager_panel._on_filter_change(*args)
         
     def _update_status_bar(self):
         """更新状态栏"""

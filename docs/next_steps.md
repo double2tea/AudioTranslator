@@ -1,36 +1,51 @@
 # 音频翻译器 - 下一步开发计划
 
+## 0. 已完成的功能优化
+
+### 文件选择功能改进 ✅
+
+1. 文件ID系统优化：
+   - 修改了`FileManager`类，为每个文件分配唯一ID
+   - 在树视图中使用ID作为树项标识符，而不是直接使用文件路径
+   - 添加了专用方法获取和更新文件属性
+
+2. 直接多选功能实现：
+   - 实现无需按住Ctrl/Command键即可多选文件
+   - 点击文件直接添加到选择，无需修饰键
+   - 改进选择视觉反馈，使用标记和颜色
+
+3. 文件打开功能优化：
+   - 修复了文件打开功能，确保使用正确的文件路径
+   - 增加了文件存在性检查和错误处理
+   - 支持多文件路径复制
+
 ## 1. 翻译结果列实现
 
 当前已经在UI中预留了翻译结果列，但还缺少实际的翻译功能实现。需要完成以下任务：
 
-### 文件元数据扩展
+### 文件元数据扩展 ✅
 
 1. 修改`FileManager`类的`_process_file`方法，在返回的元组中添加`translated_name`字段：
    ```python
    # 当前: (file_name, size_str, file_type, status, file_path)
-   # 修改为: (file_name, size_str, file_type, status, file_path, translated_name)
+   # 修改为: (file_id, name, size_str, file_type, translated_name, status, file_path)
    ```
 
-2. 更新`FileManager`类中的相关方法，确保它们正确处理新增的字段：
-   - `update_file_status`
-   - `batch_update_status`
-   - `_sort_files`
+2. 更新`FileManager`类中的相关方法，确保它们正确处理新增的字段 ✅
+   - 添加了`get_file_property`方法获取文件属性
+   - 添加了`update_file_property`方法更新文件属性
+   - 修改了文件信息存储结构，使用ID作为主键
 
-3. 添加更新翻译结果的专用方法：
+3. 添加更新翻译结果的专用方法 ✅
    ```python
-   def update_file_translation(self, file_path: str, translated_name: str):
-       """更新文件的翻译结果"""
-       # 实现代码
-   
-   def batch_update_translations(self, file_paths: List[str], translations: List[str]) -> int:
-       """批量更新文件的翻译结果"""
-       # 实现代码
+   def update_file_property(self, file_id: str, property_name: str, value: str) -> bool:
+       """更新文件的指定属性"""
+       # 已实现代码
    ```
 
-### 翻译服务集成
+### 翻译服务集成 ✅
 
-1. 在`FileManagerPanel`类中添加对`TranslatorService`的引用：
+1. 在`FileManagerPanel`类中添加对`TranslatorService`的引用 ✅
    ```python
    def __init__(self, parent: tk.Widget, file_manager: Optional[FileManager] = None, 
                 translator_service: Optional[TranslatorService] = None):
@@ -38,15 +53,13 @@
        self.translator_service = translator_service
    ```
 
-2. 实现翻译按钮和菜单的功能，完成`_translate_selected_files`方法：
+2. 实现翻译按钮和菜单的功能，完成`_translate_selected_files`方法 ✅
    ```python
    def _translate_selected_files(self) -> None:
-       """翻译选中的文件名"""
-       if not self.translator_service:
-           messagebox.showwarning("翻译服务不可用", "翻译服务未配置或不可用。")
-           return
-       
+       """翻译选中的文件"""
        # 实现翻译逻辑
+       # 显示进度条
+       # 异步处理翻译请求
    ```
 
 3. 添加翻译进度显示功能：

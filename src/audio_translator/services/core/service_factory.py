@@ -71,6 +71,9 @@ class ServiceFactory:
         # 注册服务管理器服务（依赖配置服务）
         self._dependencies["service_manager_service"] = {"config_service"}
         
+        # 注册翻译服务（依赖配置服务和UCS服务）
+        self._dependencies["translator_service"] = {"config_service", "ucs_service"}
+        
         logger.debug("核心服务已注册")
     
     def get_service(self, service_name: str) -> Optional[BaseService]:
@@ -180,6 +183,22 @@ class ServiceFactory:
                 # 获取配置路径而不是直接传递 ConfigService 对象
                 services_config_path = config_service.get_config_path("services.json")
                 service = ServiceManagerService(services_config_path)
+                self._services[service_name] = service
+                return service
+                
+            elif service_name == "translator_service":
+                # 获取依赖服务
+                config_service = self.get_service("config_service")
+                if not config_service:
+                    logger.error("创建翻译服务失败：无法获取配置服务")
+                    return None
+                
+                ucs_service = self.get_service("ucs_service")
+                if not ucs_service:
+                    logger.error("创建翻译服务失败：无法获取UCS服务")
+                    return None
+                
+                service = TranslatorService(config_service, ucs_service)
                 self._services[service_name] = service
                 return service
                 
@@ -361,4 +380,14 @@ class ServiceFactory:
             服务管理器服务实例，如果获取失败则返回 None
         """
         service = self.get_service("service_manager_service")
-        return service if isinstance(service, ServiceManagerService) else None 
+        return service if isinstance(service, ServiceManagerService) else None
+    
+    def get_translator_service(self) -> Optional[TranslatorService]:
+        """
+        获取翻译服务实例
+        
+        Returns:
+            翻译服务实例，如果获取失败则返回 None
+        """
+        service = self.get_service("translator_service")
+        return service if isinstance(service, TranslatorService) else None 
