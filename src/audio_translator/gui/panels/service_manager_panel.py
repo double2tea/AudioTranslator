@@ -362,8 +362,8 @@ class ServiceManagerPanel(ServicePanel):
         """
         self.name_var.set(service.name)
         self.type_var.set(service.type)
-        self.api_key_var.set(service.api_key)
-        self.api_url_var.set(service.api_url)
+        self.api_key_var.set(service.api_key or "")
+        self.api_url_var.set(service.api_url or "")
         self.enable_var.set(service.enabled)
         
         # 更新状态指示器
@@ -379,44 +379,48 @@ class ServiceManagerPanel(ServicePanel):
         
         # 设置当前模型（如果有）
         if hasattr(service, "current_model") and service.current_model:
-            self.model_var.set(service.current_model)
+            # 修复: 检查current_model是否为字典类型，如果是则提取name字段
+            current_model = service.current_model
+            if isinstance(current_model, dict) and 'name' in current_model:
+                self.model_var.set(current_model['name'])
+            else:
+                self.model_var.set(current_model)
         elif hasattr(service, "default_model") and service.default_model:
-            self.model_var.set(service.default_model)
+            # 修复: 检查default_model是否为字典类型，如果是则提取name字段
+            default_model = service.default_model
+            if isinstance(default_model, dict) and 'name' in default_model:
+                self.model_var.set(default_model['name'])
+            else:
+                self.model_var.set(default_model)
         else:
             self.model_var.set("")
         
-    def _update_model_list(self, models: List[str]) -> None:
+    def _update_model_list(self, models: List[Any]) -> None:
         """更新模型列表"""
         if not models:
             self.model_combo["values"] = ["<点击获取模型列表>"]
-            self.model_combo.current(0)
             return
             
-        self.model_combo["values"] = models
-        
-        # 获取当前选中的服务
-        service_id = self.current_service
-        if not service_id:
-            self.model_combo.current(0)
-            return
-            
-        service = self.service_manager.get_service(service_id)
-        if not service:
-            self.model_combo.current(0)
-            return
-            
-        # 如果服务有当前模型，选择它
-        if service.current_model and service.current_model in models:
-            current_index = models.index(service.current_model)
-            self.model_combo.current(current_index)
+        # 修复: 处理不同类型的模型数据格式
+        model_values = []
+        for model in models:
+            if isinstance(model, dict) and 'name' in model:
+                # 如果模型是字典并且包含name字段，使用name字段的值
+                model_values.append(model['name'])
+            elif isinstance(model, str):
+                # 如果模型是字符串，直接使用
+                model_values.append(model)
+            else:
+                # 其他情况，尝试转换为字符串
+                try:
+                    model_values.append(str(model))
+                except:
+                    pass
+                    
+        if model_values:
+            self.model_combo["values"] = model_values
         else:
-            # 否则选择第一个模型并更新服务配置
-            self.model_combo.current(0)
-            if models:
-                service.current_model = models[0]
-                # 保存更新后的服务配置
-                self.service_manager.update_service(service_id, service.to_dict())
-                self.service_manager.save_config()
+            self.model_combo["values"] = ["<点击获取模型列表>"]
         
     def _save_service(self) -> None:
         """保存当前服务配置"""
@@ -483,23 +487,43 @@ class ServiceManagerPanel(ServicePanel):
             if hasattr(service, "list_models"):
                 models = service.list_models()
                 if models:
-                    self.model_combo["values"] = models
+                    # 修复: 处理模型列表中可能为字典的情况
+                    model_values = []
+                    for model in models:
+                        if isinstance(model, dict) and 'name' in model:
+                            model_values.append(model['name'])
+                        elif isinstance(model, str):
+                            model_values.append(model)
+                        else:
+                            try:
+                                model_values.append(str(model))
+                            except:
+                                pass
+                                
+                    if model_values:
+                        self.model_combo["values"] = model_values
                     
-                    # 如果当前没有选择模型或选择的是提示文本，则自动选择第一个模型
-                    current_model = self.model_var.get()
-                    if not current_model or current_model == "<点击获取模型列表>":
-                        self.model_var.set(models[0])
-                        
-                        # 更新服务的当前模型
-                        if hasattr(service, "current_model"):
-                            service.current_model = models[0]
+                        # 如果当前没有选择模型或选择的是提示文本，则自动选择第一个模型
+                        current_model = self.model_var.get()
+                        if not current_model or current_model == "<点击获取模型列表>":
+                            self.model_var.set(model_values[0])
                             
-                            # 保存更新到配置
-                            config = service.to_dict()
-                            config["current_model"] = models[0]
-                            self.service_manager.update_service(self.current_service, config)
-                    
-                    messagebox.showinfo("成功", f"成功获取到 {len(models)} 个模型")
+                            # 更新服务的当前模型
+                            if hasattr(service, "current_model"):
+                                # 保持原始模型对象格式
+                                if isinstance(models[0], dict) and 'name' in models[0]:
+                                    service.current_model = models[0]['name']
+                                else:
+                                    service.current_model = models[0]
+                                
+                                # 保存更新到配置
+                                config = service.to_dict()
+                                config["current_model"] = service.current_model
+                                self.service_manager.update_service(self.current_service, config)
+                        
+                        messagebox.showinfo("成功", f"成功获取到 {len(model_values)} 个模型")
+                    else:
+                        messagebox.showinfo("提示", "未获取到有效的模型列表")
                 else:
                     messagebox.showinfo("提示", "未获取到模型列表")
             else:
