@@ -328,21 +328,53 @@ class ServiceManagerService(BaseService):
         
         Args:
             service_id: 服务ID
-            config: 新的配置
-            
-        Raises:
-            ValueError: 如果服务不存在
+            config: 新的配置信息
         """
-        if service := self.get_service(service_id):
-            old_config = service.to_dict()
-            service.update_config(config)
-            self.save_config()
+        if service_id not in self.services:
+            raise KeyError(f"服务ID '{service_id}' 不存在")
             
-            # 触发服务更新事件
-            event = ServiceUpdatedEvent(self, service_id, service.type, config)
-            self.event_manager.post_event(event)
-        else:
-            raise ValueError(f"服务不存在: {service_id}")
+        # 获取当前服务实例
+        service = self.services[service_id]
+        
+        # 特殊处理models字段，确保自定义模型不会被覆盖
+        if 'models' in config and hasattr(service, 'models'):
+            # 如果service.models是列表且包含自定义模型
+            if isinstance(service.models, list):
+                custom_models = []
+                # 收集现有的自定义模型
+                for model in service.models:
+                    if isinstance(model, dict) and model.get('is_custom', False):
+                        custom_models.append(model)
+                        
+                # 如果配置中的models是列表
+                if isinstance(config['models'], list):
+                    # 处理新配置的模型列表，保留原来的自定义模型
+                    for custom_model in custom_models:
+                        # 检查新列表中是否已包含此自定义模型
+                        model_exists = False
+                        for new_model in config['models']:
+                            if isinstance(new_model, dict) and new_model.get('name') == custom_model.get('name'):
+                                model_exists = True
+                                break
+                            elif isinstance(new_model, str) and new_model == custom_model.get('name'):
+                                model_exists = True
+                                break
+                                
+                        # 如果不存在，则添加到新列表
+                        if not model_exists:
+                            config['models'].append(custom_model)
+        
+        # 更新服务配置
+        service.update_config(config)
+        
+        # 触发服务更新事件
+        event = ServiceUpdatedEvent(self, service_id, service.type, config)
+        self.event_manager.post_event(event)
+        
+        # 保存配置到文件
+        self.save_config()
+        
+        logger.info(f"服务 '{service.name}' (ID: {service_id}) 已更新")
             
     def test_service(self, service_id: str) -> Dict:
         """

@@ -192,14 +192,21 @@ class ServiceManagerPanel(ServicePanel):
         ).grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=5)
         
         # 模型选择
-        ttk.Label(form_frame, text="默认模型:").grid(row=5, column=0, sticky="e", padx=5, pady=5)
-        self.model_var = tk.StringVar()
-        self.model_combo = ttk.Combobox(
-            form_frame,
-            textvariable=self.model_var,
-            state="readonly"
-        )
+        ttk.Label(form_frame, text="模型:").grid(row=5, column=0, sticky="e", padx=5, pady=5)
+        self.model_var = tk.StringVar(value="<点击获取模型列表>")
+        self.model_combo = ttk.Combobox(form_frame, textvariable=self.model_var, width=30)
         self.model_combo.grid(row=5, column=1, sticky="ew", padx=5, pady=5)
+        self.model_combo["values"] = ["<点击获取模型列表>"]
+        
+        # 添加自定义模型按钮
+        self.custom_model_btn = ttk.Button(form_frame, text="添加自定义模型", command=self._add_custom_model)
+        self.custom_model_btn.grid(row=5, column=2, padx=5, pady=5)
+        create_tooltip(self.custom_model_btn, "添加一个自定义模型到当前服务")
+        
+        # 获取模型列表按钮
+        self.get_models_btn = ttk.Button(form_frame, text="获取模型列表", command=self._fetch_models)
+        self.get_models_btn.grid(row=5, column=3, padx=5, pady=5)
+        create_tooltip(self.get_models_btn, "从服务获取可用模型列表")
         
         # 服务状态
         ttk.Label(form_frame, text="服务状态:").grid(row=6, column=0, sticky="e", padx=5, pady=5)
@@ -226,12 +233,6 @@ class ServiceManagerPanel(ServicePanel):
             btn_frame,
             text="测试连接",
             command=self._test_connection
-        ).pack(side="left", padx=5)
-        
-        ttk.Button(
-            btn_frame,
-            text="获取模型列表",
-            command=self._fetch_models
         ).pack(side="left", padx=5)
         
         # 绑定事件
@@ -354,46 +355,62 @@ class ServiceManagerPanel(ServicePanel):
                     self.after(100, lambda: self._auto_load_models(service))
             
     def _load_service_config(self, service: ModelService) -> None:
-        """
-        加载服务配置到表单
+        """加载服务配置到UI"""
+        # 清空模型下拉框，初始化为提示文本
+        self.model_combo["values"] = ["<点击获取模型列表>"]
+        self.model_var.set("<点击获取模型列表>")
         
-        Args:
-            service: 服务实例
-        """
+        # 设置基本信息
         self.name_var.set(service.name)
         self.type_var.set(service.type)
-        self.api_key_var.set(service.api_key or "")
-        self.api_url_var.set(service.api_url or "")
+        self.api_key_var.set(service.api_key)
+        self.api_url_var.set(service.api_url)
         self.enable_var.set(service.enabled)
         
-        # 更新状态指示器
-        if service.enabled:
-            self.status_indicator.config(foreground="green")
-            self.status_label.config(text="已启用")
-        else:
-            self.status_indicator.config(foreground="gray")
-            self.status_label.config(text="已禁用")
-            
-        # 加载模型列表并自动设置当前模型
-        self._update_model_list(service.models)
-        
-        # 设置当前模型（如果有）
-        if hasattr(service, "current_model") and service.current_model:
-            # 修复: 检查current_model是否为字典类型，如果是则提取name字段
-            current_model = service.current_model
-            if isinstance(current_model, dict) and 'name' in current_model:
-                self.model_var.set(current_model['name'])
-            else:
-                self.model_var.set(current_model)
-        elif hasattr(service, "default_model") and service.default_model:
-            # 修复: 检查default_model是否为字典类型，如果是则提取name字段
-            default_model = service.default_model
-            if isinstance(default_model, dict) and 'name' in default_model:
-                self.model_var.set(default_model['name'])
-            else:
-                self.model_var.set(default_model)
-        else:
-            self.model_var.set("")
+        # 加载模型列表（如果有）
+        if hasattr(service, 'models') and service.models:
+            # 如果models是列表，尝试解析
+            if isinstance(service.models, list) and service.models:
+                model_values = []
+                for model in service.models:
+                    if isinstance(model, dict) and 'name' in model:
+                        model_values.append(model['name'])
+                    elif isinstance(model, str):
+                        model_values.append(model)
+                    else:
+                        try:
+                            model_values.append(str(model))
+                        except:
+                            pass
+                            
+                if model_values:
+                    self.model_combo["values"] = model_values
+                    
+                    # 如果有current_model，则选中
+                    if hasattr(service, 'current_model') and service.current_model:
+                        current_model = service.current_model
+                        if isinstance(current_model, dict) and 'name' in current_model:
+                            self.model_var.set(current_model['name'])
+                        elif isinstance(current_model, str):
+                            # 检查当前模型是否在列表中
+                            if current_model in model_values:
+                                self.model_var.set(current_model)
+                            else:
+                                # 如果不在列表中但有值，可能是模型列表更新了
+                                # 添加到列表并选中
+                                model_values.append(current_model)
+                                self.model_combo["values"] = model_values
+                                self.model_var.set(current_model)
+                        else:
+                            try:
+                                model_str = str(current_model)
+                                if model_str in model_values:
+                                    self.model_var.set(model_str)
+                            except:
+                                pass
+                    elif model_values and len(model_values) > 0:
+                        # 如果没有当前模型但有模型列表，选择第一个
+                        self.model_var.set(model_values[0])
         
     def _update_model_list(self, models: List[Any]) -> None:
         """更新模型列表"""
@@ -421,7 +438,129 @@ class ServiceManagerPanel(ServicePanel):
             self.model_combo["values"] = model_values
         else:
             self.model_combo["values"] = ["<点击获取模型列表>"]
+            
+        # 创建模型上下文菜单
+        self._create_model_context_menu()
         
+    def _create_model_context_menu(self):
+        """为模型下拉框创建上下文菜单，用于管理自定义模型"""
+        self.model_context_menu = tk.Menu(self, tearoff=0)
+        self.model_context_menu.add_command(label="删除自定义模型", command=self._remove_custom_model)
+        self.model_context_menu.add_command(label="刷新模型列表", command=self._fetch_models)
+        
+        # 绑定右键点击事件
+        self.model_combo.bind("<Button-3>", self._show_model_context_menu)
+        
+    def _show_model_context_menu(self, event):
+        """显示模型上下文菜单"""
+        # 获取当前选中的模型
+        model_name = self.model_var.get()
+        if not model_name or model_name == "<点击获取模型列表>":
+            return
+            
+        # 检查是否是自定义模型
+        service = self.service_manager.get_service(self.current_service)
+        if not service or not hasattr(service, "models") or not isinstance(service.models, list):
+            return
+            
+        is_custom = False
+        for model in service.models:
+            if isinstance(model, dict) and model.get('name') == model_name:
+                is_custom = model.get('is_custom', False)
+                break
+                
+        # 启用或禁用删除选项
+        if is_custom:
+            self.model_context_menu.entryconfig("删除自定义模型", state="normal")
+        else:
+            self.model_context_menu.entryconfig("删除自定义模型", state="disabled")
+            
+        # 显示上下文菜单
+        try:
+            self.model_context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.model_context_menu.grab_release()
+            
+    def _remove_custom_model(self):
+        """删除自定义模型"""
+        if not self.current_service:
+            return
+            
+        model_name = self.model_var.get()
+        if not model_name or model_name == "<点击获取模型列表>":
+            return
+            
+        service = self.service_manager.get_service(self.current_service)
+        if not service:
+            return
+            
+        # 确认删除
+        if not messagebox.askyesno("确认", f"确定要删除自定义模型 '{model_name}' 吗？"):
+            return
+            
+        try:
+            # 使用 remove_model 方法删除模型
+            if hasattr(service, "remove_model"):
+                success = service.remove_model(model_name)
+            else:
+                # 手动实现删除
+                success = False
+                if hasattr(service, "models") and isinstance(service.models, list):
+                    original_length = len(service.models)
+                    # 创建新的模型列表，排除要删除的模型
+                    service.models = [m for m in service.models if 
+                        not (isinstance(m, dict) and m.get('name') == model_name) and 
+                        not (isinstance(m, str) and m == model_name)]
+                    success = len(service.models) < original_length
+                    
+                    # 更新当前模型
+                    if service.current_model == model_name:
+                        if service.models and len(service.models) > 0:
+                            if isinstance(service.models[0], dict) and 'name' in service.models[0]:
+                                service.current_model = service.models[0]['name']
+                            elif isinstance(service.models[0], str):
+                                service.current_model = service.models[0]
+                        else:
+                            service.current_model = ""
+                            
+            if success:
+                # 更新服务配置
+                config = service.to_dict()
+                config["models"] = service.models
+                if "current_model" in config and config["current_model"] == model_name:
+                    # 如果当前模型是被删除的模型，更新当前模型
+                    if service.models and len(service.models) > 0:
+                        if isinstance(service.models[0], dict) and 'name' in service.models[0]:
+                            config["current_model"] = service.models[0]['name']
+                        elif isinstance(service.models[0], str):
+                            config["current_model"] = service.models[0]
+                    else:
+                        config["current_model"] = ""
+                        
+                self.service_manager.update_service(self.current_service, config)
+                
+                # 更新UI
+                current_values = list(self.model_combo["values"])
+                if model_name in current_values:
+                    current_values.remove(model_name)
+                    if not current_values:
+                        current_values = ["<点击获取模型列表>"]
+                    self.model_combo["values"] = current_values
+                    
+                    # 更新选中的模型
+                    if service.current_model:
+                        self.model_var.set(service.current_model)
+                    elif current_values and current_values[0] != "<点击获取模型列表>":
+                        self.model_var.set(current_values[0])
+                    else:
+                        self.model_var.set("<点击获取模型列表>")
+                        
+                messagebox.showinfo("成功", f"自定义模型 '{model_name}' 已删除")
+            else:
+                messagebox.showinfo("提示", f"未找到模型 '{model_name}' 或模型不是自定义模型")
+        except Exception as e:
+            messagebox.showerror("错误", f"删除自定义模型失败: {str(e)}")
+            
     def _save_service(self) -> None:
         """保存当前服务配置"""
         if not self.current_service:
@@ -436,8 +575,35 @@ class ServiceManagerPanel(ServicePanel):
         }
         
         # 如果有选择模型，也保存模型
-        if self.model_var.get() and self.model_var.get() != "<点击获取模型列表>":
-            config["default_model"] = self.model_var.get()
+        model_name = self.model_var.get()
+        if model_name and model_name != "<点击获取模型列表>":
+            config["current_model"] = model_name
+            
+            # 确保service的模型列表中包含该模型
+            service = self.service_manager.get_service(self.current_service)
+            if service and hasattr(service, "models"):
+                # 检查是否需要更新models
+                models_changed = False
+                if isinstance(service.models, list):
+                    # 如果模型不在列表中，添加一个简单的模型对象
+                    model_exists = False
+                    for model in service.models:
+                        if isinstance(model, dict) and model.get('name') == model_name:
+                            model_exists = True
+                            break
+                        elif isinstance(model, str) and model == model_name:
+                            model_exists = True
+                            break
+                            
+                    if not model_exists:
+                        service.models.append({"name": model_name, "is_custom": True})
+                        models_changed = True
+                else:
+                    service.models = [{"name": model_name, "is_custom": True}]
+                    models_changed = True
+                    
+                if models_changed:
+                    config["models"] = service.models
         
         try:
             self.service_manager.update_service(self.current_service, config)
@@ -722,3 +888,115 @@ class ServiceManagerPanel(ServicePanel):
             # 确保至少有一个默认选项
             self.model_combo["values"] = ["<点击获取模型列表>"]
             self.model_combo.current(0) 
+
+    def _add_custom_model(self) -> None:
+        """添加自定义模型到当前服务"""
+        if not self.current_service:
+            messagebox.showinfo("提示", "请先选择一个服务")
+            return
+            
+        service = self.service_manager.get_service(self.current_service)
+        if not service:
+            messagebox.showinfo("提示", "服务不可用")
+            return
+            
+        # 创建添加自定义模型的对话框
+        dialog = tk.Toplevel(self)
+        dialog.title("添加自定义模型")
+        dialog.geometry("400x250")
+        dialog.resizable(False, False)
+        dialog.transient(self)  # 设置为应用模态
+        dialog.grab_set()
+        
+        # 配置对话框网格
+        dialog.columnconfigure(1, weight=1)
+        
+        # 模型名称
+        ttk.Label(dialog, text="模型名称:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        model_name_var = tk.StringVar()
+        model_name_entry = ttk.Entry(dialog, textvariable=model_name_var)
+        model_name_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        
+        # 模型ID (如果需要)
+        ttk.Label(dialog, text="模型ID:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        model_id_var = tk.StringVar()
+        model_id_entry = ttk.Entry(dialog, textvariable=model_id_var)
+        model_id_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Label(dialog, text="(可选)").grid(row=1, column=2, sticky="w", padx=5, pady=5)
+        
+        # 上下文长度
+        ttk.Label(dialog, text="上下文长度:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        context_length_var = tk.StringVar(value="4096")
+        context_length_entry = ttk.Entry(dialog, textvariable=context_length_var)
+        context_length_entry.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Label(dialog, text="(可选)").grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        
+        # 模型描述
+        ttk.Label(dialog, text="模型描述:").grid(row=3, column=0, sticky="ne", padx=5, pady=5)
+        description_text = tk.Text(dialog, height=3, width=30, wrap=tk.WORD)
+        description_text.grid(row=3, column=1, sticky="ew", padx=5, pady=5)
+        
+        # 按钮框架
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=10)
+        
+        # 保存和取消按钮
+        def save_custom_model():
+            """保存自定义模型"""
+            model_name = model_name_var.get().strip()
+            if not model_name:
+                messagebox.showerror("错误", "模型名称不能为空")
+                return
+                
+            # 检查模型名称是否已存在
+            existing_models = [value for value in self.model_combo["values"] if value != "<点击获取模型列表>"]
+            if model_name in existing_models:
+                messagebox.showerror("错误", f"模型名称 '{model_name}' 已存在")
+                return
+                
+            try:
+                # 创建模型对象
+                model_data = {
+                    "name": model_name,
+                    "id": model_id_var.get().strip() or model_name,
+                    "context_length": int(context_length_var.get().strip() or "4096"),
+                    "description": description_text.get("1.0", tk.END).strip(),
+                    "is_custom": True
+                }
+                
+                # 更新服务的模型列表
+                if hasattr(service, "models"):
+                    if isinstance(service.models, list):
+                        service.models.append(model_data)
+                    else:
+                        service.models = [model_data]
+                else:
+                    service.models = [model_data]
+                    
+                # 更新UI上的模型列表
+                current_values = list(self.model_combo["values"])
+                if "<点击获取模型列表>" in current_values:
+                    current_values.remove("<点击获取模型列表>")
+                current_values.append(model_name)
+                self.model_combo["values"] = current_values
+                
+                # 选中新添加的模型
+                self.model_var.set(model_name)
+                
+                # 更新服务配置
+                config = service.to_dict()
+                config["models"] = service.models
+                self.service_manager.update_service(self.current_service, config)
+                
+                messagebox.showinfo("成功", f"自定义模型 '{model_name}' 已添加")
+                dialog.destroy()
+            except ValueError as ve:
+                messagebox.showerror("错误", f"输入格式错误: {str(ve)}")
+            except Exception as e:
+                messagebox.showerror("错误", f"添加自定义模型失败: {str(e)}")
+                
+        ttk.Button(btn_frame, text="保存", command=save_custom_model).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="取消", command=dialog.destroy).pack(side="right", padx=5)
+        
+        # 设置焦点到模型名称输入框
+        model_name_entry.focus_set() 

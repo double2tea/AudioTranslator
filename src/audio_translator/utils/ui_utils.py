@@ -31,7 +31,7 @@ def create_tooltip(widget, text: str) -> None:
         
         label = ttk.Label(tooltip, text=text, justify=tk.LEFT,
                          background="#ffffff", relief=tk.SOLID, borderwidth=1,
-                         font=("宋体", "10", "normal"), padx=5, pady=2)
+                         font=("宋体", "10", "normal"), padding=(5, 2))
         label.pack(ipadx=1)
     
     def leave(event):

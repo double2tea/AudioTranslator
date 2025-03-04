@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import requests
 import json
 import logging
@@ -66,8 +66,12 @@ class ModelService(ABC):
         self.api_key = config.get('api_key', self.api_key)
         self.api_url = config.get('api_url', self.api_url)
         self.enabled = config.get('enabled', self.enabled)
-        self.models = config.get('models', self.models)
-        self.current_model = config.get('current_model', self.current_model)
+        
+        # 更新模型相关配置
+        if 'models' in config:
+            self.models = config.get('models', [])
+        if 'current_model' in config:
+            self.current_model = config.get('current_model', '')
         
     def to_dict(self) -> Dict:
         """Convert service configuration to dictionary"""
@@ -102,4 +106,78 @@ class ModelService(ABC):
             return response.json()
         except requests.exceptions.RequestException as e:
             logging.error(f"{self.name} API request failed: {str(e)}")
-            raise 
+            raise
+            
+    def add_custom_model(self, model_data: Dict[str, Any]) -> bool:
+        """
+        添加自定义模型到服务
+        
+        Args:
+            model_data: 模型数据字典，必须包含name字段
+            
+        Returns:
+            添加是否成功
+        """
+        if not model_data or not isinstance(model_data, dict) or 'name' not in model_data:
+            logging.error("添加自定义模型失败：模型数据无效")
+            return False
+            
+        # 确保模型有is_custom标记
+        model_data['is_custom'] = True
+        
+        # 检查是否已存在同名模型
+        if isinstance(self.models, list):
+            for model in self.models:
+                if isinstance(model, dict) and model.get('name') == model_data['name']:
+                    logging.warning(f"模型 '{model_data['name']}' 已存在")
+                    return False
+                elif isinstance(model, str) and model == model_data['name']:
+                    logging.warning(f"模型 '{model_data['name']}' 已存在")
+                    return False
+                    
+            # 添加到模型列表
+            self.models.append(model_data)
+        else:
+            # 如果models不是列表，创建新列表
+            self.models = [model_data]
+            
+        return True
+        
+    def remove_model(self, model_name: str) -> bool:
+        """
+        从服务中移除模型
+        
+        Args:
+            model_name: 要移除的模型名称
+            
+        Returns:
+            移除是否成功
+        """
+        if not model_name or not isinstance(self.models, list):
+            return False
+            
+        original_length = len(self.models)
+        
+        # 移除匹配的模型
+        new_models = []
+        for model in self.models:
+            if isinstance(model, dict) and model.get('name') != model_name:
+                new_models.append(model)
+            elif isinstance(model, str) and model != model_name:
+                new_models.append(model)
+                
+        # 更新模型列表
+        self.models = new_models
+        
+        # 如果当前模型是被删除的模型，需要更新当前模型
+        if self.current_model == model_name:
+            if self.models and len(self.models) > 0:
+                if isinstance(self.models[0], dict) and 'name' in self.models[0]:
+                    self.current_model = self.models[0]['name']
+                elif isinstance(self.models[0], str):
+                    self.current_model = self.models[0]
+            else:
+                self.current_model = ''
+                
+        # 检查是否移除了模型
+        return len(self.models) < original_length 
