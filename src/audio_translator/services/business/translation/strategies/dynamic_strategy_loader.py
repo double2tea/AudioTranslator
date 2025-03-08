@@ -4,7 +4,9 @@ import inspect
 import logging
 import json
 import yaml
+import pkg_resources
 from typing import Dict, Any, List, Type, Optional
+from pathlib import Path
 
 from ..strategies.strategy_registry import StrategyRegistry 
 from ..strategies.base_strategy import ITranslationStrategy
@@ -21,12 +23,26 @@ class DynamicStrategyLoader:
         
         Args:
             registry: 策略注册表实例
-            config_dir: 配置文件目录，默认为./config/strategies
-            plugins_dir: 插件目录，默认为./plugins/strategies
+            config_dir: 配置文件目录，默认为包内的config/strategies
+            plugins_dir: 插件目录，默认为包内的plugins/strategies
         """
         self.registry = registry
-        self.config_dir = config_dir or os.path.join('.', 'config', 'strategies')
-        self.plugins_dir = plugins_dir or os.path.join('.', 'plugins', 'strategies')
+        
+        # 使用基于包的路径
+        self.package_path = Path(pkg_resources.resource_filename('audio_translator', ''))
+        
+        # 配置文件目录
+        if config_dir:
+            self.config_dir = config_dir
+        else:
+            self.config_dir = str(self.package_path / 'config' / 'strategies')
+            
+        # 插件目录
+        if plugins_dir:
+            self.plugins_dir = plugins_dir
+        else:
+            self.plugins_dir = str(self.package_path / 'plugins' / 'strategies')
+            
         self.loaded_strategies = {}  # 类型: Dict[str, ITranslationStrategy]
         
     def load_from_config(self, config_file: str = None) -> int:

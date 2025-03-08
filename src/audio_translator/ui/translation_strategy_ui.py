@@ -3,7 +3,7 @@ from tkinter import ttk, messagebox, scrolledtext
 import json
 from typing import Dict, Any, List, Optional, Callable
 
-from ..services.business.translation.translation_manager import TranslationManager
+from audio_translator.services.business.translation.translation_manager import TranslationManager
 
 
 class TranslationStrategyUI:

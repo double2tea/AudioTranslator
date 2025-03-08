@@ -3,9 +3,11 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import logging
 import json
+import pkg_resources
+from pathlib import Path
 
-from .services.business.translation.translation_manager import TranslationManager
-from .ui.translation_strategy_ui import create_translation_strategy_window
+from audio_translator.services.business.translation.translation_manager import TranslationManager
+from audio_translator.ui.translation_strategy_ui import create_translation_strategy_window
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -40,8 +42,11 @@ class AudioTranslatorApp:
     def _load_config(self):
         """加载配置"""
         try:
-            config_path = os.path.join("config", "strategies", "strategies.json")
-            if os.path.exists(config_path):
+            # 使用基于包的路径
+            package_path = Path(pkg_resources.resource_filename('audio_translator', ''))
+            config_path = package_path / 'config' / 'strategies' / 'strategies.json'
+            
+            if config_path.exists():
                 with open(config_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
             else:
