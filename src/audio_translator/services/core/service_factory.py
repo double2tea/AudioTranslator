@@ -7,6 +7,7 @@
 
 import logging
 from typing import Dict, Any, Optional, Type, Set
+import importlib
 
 from .base_service import BaseService
 from .interfaces import IServiceRegistry
@@ -16,7 +17,7 @@ from ..infrastructure.config_service import ConfigService
 from ..business.ucs.ucs_service import UCSService
 from .service_manager_service import ServiceManagerService
 from ..business.translator_service import TranslatorService
-from ..business.category_service import CategoryService
+from ..business.category.category_service import CategoryService
 from ..business.theme_service import ThemeService
 from ..api.providers.openai.openai_service import OpenAIService
 from ..api.providers.anthropic.anthropic_service import AnthropicService
@@ -66,6 +67,28 @@ class ServiceFactory(IServiceRegistry):
         self._register_core_services()
         
         logger.debug("服务工厂已创建")
+        
+        self._service_classes = {
+            # 基础服务
+            'config_service': 'audio_translator.services.infrastructure.config_service.ConfigService',
+            'file_service': 'audio_translator.services.infrastructure.file_service.FileService',
+            
+            # 业务服务
+            'audio_service': 'audio_translator.services.business.audio_service.AudioService',
+            'translator_service': 'audio_translator.services.business.translator_service.TranslatorService',
+            'category_service': 'audio_translator.services.business.category.category_service.CategoryService',
+            'theme_service': 'audio_translator.services.business.theme_service.ThemeService',
+            'ucs_service': 'audio_translator.services.business.ucs_service.UCSService',
+            'naming_service': 'audio_translator.services.business.naming.naming_service.NamingService',
+            
+            # API服务
+            'model_service': 'audio_translator.services.api.model_service.ModelService',
+            'openai_service': 'audio_translator.services.api.providers.openai.openai_service.OpenAIService',
+            'anthropic_service': 'audio_translator.services.api.providers.anthropic.anthropic_service.AnthropicService',
+            'gemini_service': 'audio_translator.services.api.providers.gemini.gemini_service.GeminiService',
+            'alibaba_service': 'audio_translator.services.api.providers.alibaba.alibaba_service.AlibabaService',
+            'zhipu_service': 'audio_translator.services.api.providers.zhipu.zhipu_service.ZhipuService',
+        }
     
     def _register_core_services(self):
         """注册核心服务"""
@@ -171,16 +194,11 @@ class ServiceFactory(IServiceRegistry):
             return self._services[service_name]
         
         # 创建服务
-        service = self._create_service(service_name)
-        if not service:
-            logger.error(f"创建服务 '{service_name}' 失败")
-            return None
+        if self._create_service(service_name):
+            return self._services[service_name]
         
-        if not self._initialize_service(service_name):
-            logger.error(f"初始化服务 '{service_name}' 失败")
-            return None
-        
-        return self._services[service_name]
+        logger.error(f"服务 '{service_name}' 创建失败")
+        return None
     
     def has_service(self, service_name: str) -> bool:
         """
@@ -194,7 +212,7 @@ class ServiceFactory(IServiceRegistry):
         """
         return service_name in self._services
     
-    def _create_service(self, service_name: str) -> Optional[BaseService]:
+    def _create_service(self, service_name: str) -> bool:
         """
         创建服务实例
         
@@ -202,91 +220,39 @@ class ServiceFactory(IServiceRegistry):
             service_name: 服务名称
             
         Returns:
-            创建的服务实例，失败则返回 None
+            创建是否成功
         """
         try:
-            if service_name == "config_service":
-                service = ConfigService()
-                self._services[service_name] = service
-                return service
+            # 获取服务类路径
+            service_class_path = self._service_classes.get(service_name)
+            if not service_class_path:
+                logger.error(f"未知的服务类型: {service_name}")
+                return False
                 
-            elif service_name == "file_service":
-                # 获取依赖服务
-                config_service = self.get_service("config_service")
-                if not config_service:
-                    logger.error("创建文件服务失败：无法获取配置服务")
-                    return None
-                
-                service = FileService()
-                self._services[service_name] = service
-                return service
-                
-            elif service_name == "audio_service":
-                # 获取依赖服务
-                file_service = self.get_service("file_service")
-                if not file_service:
-                    logger.error("创建音频服务失败：无法获取文件服务")
-                    return None
-                
-                config_service = self.get_service("config_service")
-                if not config_service:
-                    logger.error("创建音频服务失败：无法获取配置服务")
-                    return None
-                
-                service = AudioService(file_service)
-                self._services[service_name] = service
-                return service
-                
-            elif service_name == "ucs_service":
-                # 获取依赖服务
-                config_service = self.get_service("config_service")
-                if not config_service:
-                    logger.error("创建UCS服务失败：无法获取配置服务")
-                    return None
-                
-                # 获取配置
-                config = config_service.get_config().get("ucs", {})
-                
-                service = UCSService(config)
-                self._services[service_name] = service
-                return service
-                
-            elif service_name == "service_manager_service":
-                # 获取依赖服务
-                config_service = self.get_service("config_service")
-                if not config_service:
-                    logger.error("创建服务管理器服务失败：无法获取配置服务")
-                    return None
-                
-                # 获取配置路径而不是直接传递 ConfigService 对象
-                services_config_path = config_service.get_config_path("services.json")
-                service = ServiceManagerService(services_config_path)
-                self._services[service_name] = service
-                return service
-                
-            elif service_name == "translator_service":
-                # 获取依赖服务
-                config_service = self.get_service("config_service")
-                if not config_service:
-                    logger.error("创建翻译服务失败：无法获取配置服务")
-                    return None
-                
-                ucs_service = self.get_service("ucs_service")
-                if not ucs_service:
-                    logger.error("创建翻译服务失败：无法获取UCS服务")
-                    return None
-                
-                service = TranslatorService(config_service, ucs_service)
-                self._services[service_name] = service
-                return service
-                
-            else:
-                logger.error(f"未知服务类型 '{service_name}'")
-                return None
-                
+            # 动态导入服务类
+            module_path, class_name = service_class_path.rsplit('.', 1)
+            module = importlib.import_module(module_path)
+            service_class = getattr(module, class_name)
+            
+            # 获取服务配置
+            config = self._services_config.get(service_name, {})
+            
+            # 创建服务实例
+            service = service_class(config)
+            
+            # 初始化服务
+            if isinstance(service, BaseService):
+                if not service.initialize():
+                    logger.error(f"服务初始化失败: {service_name}")
+                    return False
+            
+            # 注册服务
+            self._services[service_name] = service
+            logger.info(f"服务创建成功: {service_name}")
+            return True
         except Exception as e:
-            logger.error(f"创建服务 '{service_name}' 异常: {str(e)}")
-            return None
+            logger.error(f"创建服务失败: {service_name}, {e}")
+            return False
     
     def _initialize_service(self, service_name: str) -> bool:
         """
@@ -468,4 +434,13 @@ class ServiceFactory(IServiceRegistry):
             翻译服务实例，如果获取失败则返回 None
         """
         service = self.get_service("translator_service")
-        return service if isinstance(service, TranslatorService) else None 
+        return service if isinstance(service, TranslatorService) else None
+    
+    def get_all_services(self) -> Dict[str, Any]:
+        """
+        获取所有服务
+        
+        Returns:
+            服务字典，键为服务名称，值为服务实例
+        """
+        return self._services.copy() 
