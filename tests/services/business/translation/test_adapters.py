@@ -28,6 +28,8 @@ class TestAdapters(unittest.TestCase):
             'gemini_adapter.py',
             'alibaba_adapter.py',
             'zhipu_adapter.py',
+            'volc_adapter.py',
+            'deepseek_adapter.py',
             '__init__.py'
         ]
         
@@ -48,7 +50,9 @@ class TestAdapters(unittest.TestCase):
             'from .anthropic_adapter import AnthropicAdapter',
             'from .gemini_adapter import GeminiAdapter',
             'from .alibaba_adapter import AlibabaAdapter',
-            'from .zhipu_adapter import ZhipuAdapter'
+            'from .zhipu_adapter import ZhipuAdapter',
+            'from .volc_adapter import VolcAdapter',
+            'from .deepseek_adapter import DeepSeekAdapter'
         ]
         
         for imp in expected_imports:
@@ -62,7 +66,9 @@ class TestAdapters(unittest.TestCase):
             'AnthropicAdapter',
             'GeminiAdapter',
             'AlibabaAdapter',
-            'ZhipuAdapter'
+            'ZhipuAdapter',
+            'VolcAdapter',
+            'DeepSeekAdapter'
         ]
         
         for cls in expected_classes:
@@ -78,7 +84,9 @@ class TestAdapters(unittest.TestCase):
             'anthropic_adapter.py': 'AnthropicAdapter',
             'gemini_adapter.py': 'GeminiAdapter',
             'alibaba_adapter.py': 'AlibabaAdapter',
-            'zhipu_adapter.py': 'ZhipuAdapter'
+            'zhipu_adapter.py': 'ZhipuAdapter',
+            'volc_adapter.py': 'VolcAdapter',
+            'deepseek_adapter.py': 'DeepSeekAdapter'
         }
         
         for file, class_name in adapters.items():

@@ -5,10 +5,14 @@ Gemini适配器模块
 """
 
 from typing import Dict, Any, Optional, List
+import logging
+
 
 from ..model_service_adapter import ModelServiceAdapter
 from ......services.api.providers.gemini.gemini_service import GeminiService
 
+# 设置日志记录器
+logger = logging.getLogger(__name__)
 class GeminiAdapter(ModelServiceAdapter):
     """
     Gemini适配器

@@ -9,6 +9,8 @@ from .anthropic_adapter import AnthropicAdapter
 from .gemini_adapter import GeminiAdapter
 from .alibaba_adapter import AlibabaAdapter
 from .zhipu_adapter import ZhipuAdapter
+from .volc_adapter import VolcAdapter
+from .deepseek_adapter import DeepSeekAdapter
 
 __all__ = [
     'OpenAIAdapter',
@@ -16,4 +18,6 @@ __all__ = [
     'GeminiAdapter',
     'AlibabaAdapter',
     'ZhipuAdapter',
+    'VolcAdapter',
+    'DeepSeekAdapter',
 ] 

@@ -17,6 +17,8 @@ from .strategies.adapters.anthropic_adapter import AnthropicAdapter
 from .strategies.adapters.gemini_adapter import GeminiAdapter
 from .strategies.adapters.alibaba_adapter import AlibabaAdapter
 from .strategies.adapters.zhipu_adapter import ZhipuAdapter
+from .strategies.adapters.volc_adapter import VolcAdapter
+from .strategies.adapters.deepseek_adapter import DeepSeekAdapter
 
 # 设置日志记录器
 logger = logging.getLogger(__name__)
@@ -117,6 +119,14 @@ class TranslationManager(BaseService):
             # 注册智谱AI策略
             zhipu_config = strategies_config.get('zhipu', {})
             self.strategy_registry.register('zhipu', ZhipuAdapter(zhipu_config))
+            
+            # 注册Volc策略
+            volc_config = strategies_config.get('volc', {})
+            self.strategy_registry.register('volc', VolcAdapter(volc_config))
+            
+            # 注册DeepSeek策略
+            deepseek_config = strategies_config.get('deepseek', {})
+            self.strategy_registry.register('deepseek', DeepSeekAdapter(deepseek_config))
             
             # 设置默认策略
             default_strategy = self.config.get('default_strategy', 'openai')
