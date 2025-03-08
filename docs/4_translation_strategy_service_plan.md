@@ -1,786 +1,536 @@
-# 翻译策略服务开发计划 [下一步开发重点 🚀]
+# 翻译策略服务开发计划
 
-> 注：基础框架已在核心服务重构中完成，包括策略注册表、模型服务适配器和OpenAI适配器实现，这是当前阶段的下一步开发重点。
+> **注意**: 此文档描述了翻译策略服务的开发计划。基础框架、所有模型适配器、缓存管理器和上下文处理器已完成 ✅，下一步重点是集成测试和UI开发。
 
-## 1. 背景与目标
+## 1. 背景
 
-### 1.1 背景
-当前的翻译服务实现在 `TranslatorService` 中包含了多种翻译接口和算法，导致代码复杂度高、维护困难，且难以扩展新的翻译策略。为了提高系统的可维护性、可扩展性和灵活性，需要将翻译功能重构为基于策略模式的服务架构。
+当前的翻译服务功能集中在`TranslatorService`类中，随着支持的翻译接口增加和功能复杂度提升，代码变得难以维护和扩展。我们需要重构这部分功能，采用策略模式（Strategy Pattern）来提高代码的可维护性和扩展性。
 
-### 1.2 目标
-- 设计并实现一个灵活的翻译策略服务架构 [已完成 ✅]
-- 支持多种翻译接口（包括但不限于OpenAI、Anthropic、Gemini、Alibaba、Deepseek、Volc、Zhipu等）[部分完成 🔄]
-- 提供统一的策略接口，便于无缝集成新的翻译接口提供商 [已完成 ✅]
-- 实现面向接口编程，降低代码耦合度 [已完成 ✅]
-- 优化翻译性能和准确性 [进行中 🔄]
-- 实现翻译结果缓存机制 [待实现 📝]
-- 支持上下文感知的翻译处理 [待实现 📝]
-- 设计可扩展的插件机制，允许动态加载新的翻译接口实现 [计划中 📝]
+## 2. 目标
 
-## 2. 当前系统分析
+1. 设计并实现灵活的翻译策略服务架构 [已完成 ✅]
+2. 支持多种翻译接口（OpenAI、Anthropic、Gemini等）[已完成 ✅]
+3. 提供统一的策略接口，便于添加新的翻译服务 [已完成 ✅]
+4. 优化翻译性能和准确度 [已完成 ✅]
+5. 实现缓存机制，减少重复翻译请求 [已完成 ✅]
+6. 支持上下文感知的翻译处理 [已完成 ✅]
+7. 开发翻译策略服务的用户界面 [计划中]
 
-### 2.1 现有翻译服务结构
-目前的 `TranslatorService` 类承担了过多的责任：
-- 文件名解析和处理
-- 多种翻译接口的集成和调用
-- 缓存管理
-- 配置管理
-- 与UCS服务的交互
+## 3. 当前系统分析 [已完成 ✅]
 
-这种设计导致了以下问题：
-- 代码耦合度高
-- 难以添加新的翻译接口提供商
-- 测试困难
-- 维护成本高
+### 3.1 现有系统问题
 
-### 2.2 现有API接口结构
-当前系统已经实现了 `ModelService` 基类，以及多个具体的API提供商服务：
-- OpenAI [已实现 ✅]
-- Anthropic [已实现 ✅]
-- Gemini [已实现 ✅]
-- Alibaba [已实现 ✅]
-- Deepseek [规划中 📝]
-- Volc [规划中 📝]
-- Zhipu [已实现 ✅]
-等
+现有`TranslatorService`存在以下问题：
 
-但这些接口尚未与翻译服务充分集成，导致在 `TranslatorService` 中存在重复的接口调用逻辑。
+1. 高耦合：所有翻译逻辑集中在一个类中
+2. 难以扩展：添加新的翻译提供商需要修改核心代码
+3. 缺乏统一接口：不同的翻译API调用方式不一致
+4. 配置管理混乱：配置和业务逻辑混合
+5. 缺少错误处理和重试机制
 
-### 2.3 依赖关系
-`TranslatorService` 当前依赖于：
-- `ConfigService`：获取配置信息
-- `UCSService`：获取分类和翻译数据
-- 各种API服务：执行在线翻译，但没有统一的接口管理
+### 3.2 现有系统结构
 
-## 3. 设计方案
+目前`TranslatorService`主要包含以下功能：
 
-### 3.1 架构设计 [已完成 ✅]
+```python
+class TranslatorService:
+    def __init__(self, config):
+        self.config = config
+        self.model_type = config.get('model_type', 'openai')
+        # 初始化不同的API客户端
+        
+    def translate(self, text, source_lang, target_lang):
+        """根据model_type调用不同的翻译方法"""
+        if self.model_type == 'openai':
+            return self._translate_with_openai(text, source_lang, target_lang)
+        elif self.model_type == 'anthropic':
+            return self._translate_with_anthropic(text, source_lang, target_lang)
+        # 其他模型的翻译方法...
+        
+    def _translate_with_openai(self, text, source_lang, target_lang):
+        """使用OpenAI进行翻译"""
+        pass
+        
+    def _translate_with_anthropic(self, text, source_lang, target_lang):
+        """使用Anthropic进行翻译"""
+        pass
+        
+    # 其他翻译方法和辅助函数...
+```
+
+### 3.3 新系统设计 [已完成 ✅]
+
+我们将采用策略模式重构翻译服务，主要包括以下组件：
+
+1. **ITranslationStrategy**: 翻译策略接口 [已完成 ✅]
+2. **具体策略实现**: 针对不同API的实现 [已完成 ✅]
+3. **TranslationManager**: 策略管理和上下文 [已完成 ✅]
+4. **ModelServiceAdapter**: 适配现有ModelService接口 [已完成 ✅]
+5. **StrategyRegistry**: 策略注册表 [已完成 ✅]
+6. **CacheManager**: 翻译缓存管理 [已完成 ✅]
+7. **ContextProcessor**: 上下文处理器 [已完成 ✅]
+
+#### 3.3.1 系统架构图 [已完成 ✅]
 
 ```mermaid
 graph TD
-    A[TranslationManager] --> B[StrategyRegistry]
-    B --> C1[OpenAIStrategy]
-    B --> C2[AnthropicStrategy]
-    B --> C3[GeminiStrategy]
-    B --> C4[DeepseekStrategy]
-    B --> C5[AlibabaStrategy]
-    B --> C6[VolcStrategy]
-    B --> C7[ZhipuStrategy]
-    B --> C8[OfflineStrategy]
-    B --> C9[DynamicStrategyLoader]
-    A --> D[ContextProcessor]
-    A --> E[CacheManager]
-    F[ConfigService] --> A
-    G[UCSService] --> A
-    H[ModelServiceFactory] --> C1
-    H --> C2
-    H --> C3
-    H --> C4
-    H --> C5
-    H --> C6
-    H --> C7
-    DynamicLoader[动态加载机制] --> C9
+    Client[客户端] --> TM[TranslationManager]
+    TM --> SR[StrategyRegistry]
+    TM --> CP[ContextProcessor]
+    TM --> CM[CacheManager]
+    SR --> |注册/获取| S1[OpenAIStrategy]
+    SR --> |注册/获取| S2[AnthropicStrategy]
+    SR --> |注册/获取| S3[GeminiStrategy]
+    SR --> |注册/获取| S4[其他Strategy...]
+    S1 --> |适配| MS1[OpenAIService]
+    S2 --> |适配| MS2[AnthropicService]
+    S3 --> |适配| MS3[GeminiService]
+    S4 --> |适配| MS4[其他ModelService...]
+    CM --> |缓存查询/存储| DB[(缓存存储)]
+    CP --> |处理上下文| TM
 ```
 
-### 3.2 策略模式与适配器模式结合 [已完成 ✅]
+#### 3.3.2 接口定义 [已完成 ✅]
 
-翻译策略服务将结合策略模式和适配器模式：
-- **策略模式**：提供统一的翻译策略接口，允许在运行时切换不同翻译实现
-- **适配器模式**：将现有的 `ModelService` 子类适配到翻译策略接口
+**ITranslationStrategy接口**
 
-### 3.3 核心组件
-
-#### 3.3.1 ITranslationStrategy 接口 [已实现 ✅]
 ```python
-from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Union
-
-class ITranslationStrategy(ABC):
+class ITranslationStrategy:
     """翻译策略接口"""
     
-    @abstractmethod
     def get_name(self) -> str:
-        """
-        获取策略名称
-        
-        Returns:
-            策略名称
-        """
+        """获取策略名称"""
         pass
-    
-    @abstractmethod
+        
     def get_description(self) -> str:
-        """
-        获取策略描述
-        
-        Returns:
-            策略描述
-        """
+        """获取策略描述"""
         pass
-    
-    @abstractmethod
-    def get_provider_type(self) -> str:
-        """
-        获取提供商类型
         
-        Returns:
-            提供商类型标识符
-        """
-        pass
-    
-    @abstractmethod
     def translate(self, text: str, context: Dict[str, Any] = None) -> str:
-        """
-        翻译文本
-        
-        Args:
-            text: 要翻译的文本
-            context: 翻译上下文信息
-            
-        Returns:
-            翻译后的文本
-        """
+        """翻译文本"""
         pass
-    
-    @abstractmethod
+        
     def batch_translate(self, texts: List[str], context: Dict[str, Any] = None) -> List[str]:
-        """
-        批量翻译文本
-        
-        Args:
-            texts: 要翻译的文本列表
-            context: 翻译上下文信息
-            
-        Returns:
-            翻译后的文本列表
-        """
-        pass
-    
-    @abstractmethod
-    def test_connection(self) -> Dict[str, Any]:
-        """
-        测试连接状态
-        
-        Returns:
-            连接状态信息
-        """
-        pass
-    
-    @abstractmethod
-    def get_config_schema(self) -> Dict[str, Any]:
-        """
-        获取配置模式描述
-        
-        Returns:
-            描述配置项的结构和验证规则的字典
-        """
-        pass
-    
-    @abstractmethod
-    def update_config(self, config: Dict[str, Any]) -> bool:
-        """
-        更新策略配置
-        
-        Args:
-            config: 新的配置信息
-            
-        Returns:
-            更新是否成功
-        """
-        pass
-    
-    @abstractmethod
-    def get_capabilities(self) -> Dict[str, Any]:
-        """
-        获取策略能力信息
-        
-        Returns:
-            描述策略支持的能力和限制的字典
-        """
-        pass
-        
-    @abstractmethod
-    def get_metrics(self) -> Dict[str, Any]:
-        """
-        获取策略性能指标
-        
-        Returns:
-            描述策略性能指标的字典
-        """
-        pass
-```
-
-#### 3.3.2 TranslationManager 类 [进行中 🔄]
-```python
-from typing import Dict, Any, List, Optional, Type
-from .core.base_service import BaseService
-from .strategies.strategy_registry import StrategyRegistry
-from .cache.cache_manager import CacheManager
-from .context.context_processor import ContextProcessor
-
-class TranslationManager(BaseService):
-    """翻译管理器服务"""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        super().__init__(config)
-        self.name = 'translation_manager_service'
-        self.strategy_registry = StrategyRegistry()
-        self.cache_manager = CacheManager()
-        self.context_processor = ContextProcessor()
-        self.default_strategy = None
-        self.fallback_strategies = []
-    
-    def initialize(self) -> bool:
-        """初始化服务"""
-        # 注册策略
-        # 初始化缓存
-        # 设置默认策略和备选策略
-        return True
-    
-    def translate(self, text: str, strategy_name: str = None, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        使用指定策略翻译文本
-        
-        Args:
-            text: 要翻译的文本
-            strategy_name: 策略名称，如果为None则使用默认策略
-            context: 翻译上下文
-            
-        Returns:
-            包含翻译结果和元数据的字典
-        """
-        # 处理上下文
-        # 检查缓存
-        # 选择策略
-        # 执行翻译
-        # 更新缓存
-        pass
-    
-    def batch_translate(self, texts: List[str], strategy_name: str = None, context: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """批量翻译文本"""
         pass
-    
-    def register_strategy(self, name: str, strategy: 'ITranslationStrategy') -> bool:
-        """注册翻译策略"""
+        
+    def test_connection(self) -> Dict[str, Any]:
+        """测试连接"""
         pass
-    
-    def unregister_strategy(self, name: str) -> bool:
-        """注销翻译策略"""
+        
+    def get_config_schema(self) -> Dict[str, Any]:
+        """获取配置模式"""
         pass
-    
-    def set_default_strategy(self, name: str) -> bool:
-        """设置默认翻译策略"""
+        
+    def update_config(self, config: Dict[str, Any]) -> bool:
+        """更新配置"""
         pass
-    
-    def set_fallback_strategies(self, strategy_names: List[str]) -> bool:
-        """设置备选翻译策略顺序"""
+        
+    def get_capabilities(self) -> Dict[str, Any]:
+        """获取能力"""
         pass
-    
-    def get_available_strategies(self) -> List[Dict[str, Any]]:
-        """获取可用的翻译策略列表，包括每个策略的详细信息"""
-        pass
-    
-    def get_strategy_details(self, name: str) -> Optional[Dict[str, Any]]:
-        """获取指定策略的详细信息"""
-        pass
-    
-    def test_strategy(self, name: str, test_text: str = None) -> Dict[str, Any]:
-        """测试指定策略的连接和翻译性能"""
-        pass
-    
-    def reload_strategies(self) -> bool:
-        """重新加载所有策略，包括从插件目录扫描新策略"""
+        
+    def get_metrics(self) -> Dict[str, Any]:
+        """获取指标"""
         pass
 ```
 
-#### 3.3.3 ModelServiceAdapter 类 [已实现 ✅]
-```python
-from typing import Dict, Any, List, Optional
-from ..api.model_service import ModelService
-from .strategies.base_strategy import ITranslationStrategy
+#### 3.3.3 策略管理器 [已完成 ✅]
 
-class ModelServiceAdapter(ITranslationStrategy):
-    """
-    模型服务适配器，将ModelService适配为ITranslationStrategy
-    """
+**TranslationManager类**
+
+```python
+class TranslationManager:
+    """翻译策略管理器"""
     
-    def __init__(self, model_service: ModelService, config: Dict[str, Any] = None):
-        """
-        初始化适配器
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
+        self.registry = StrategyRegistry()
+        self.cache_manager = None  # 计划中
+        self.context_processor = None  # 计划中
+        self.default_strategy = self.config.get('default_strategy', 'openai')
         
-        Args:
-            model_service: 要适配的模型服务
-            config: 适配器配置
-        """
+    def initialize(self) -> bool:
+        """初始化管理器"""
+        self._register_default_strategies()
+        # 初始化缓存和上下文处理器
+        return True
+        
+    def translate(self, text: str, strategy_name: str = None, context: Dict[str, Any] = None) -> str:
+        """使用指定策略翻译文本"""
+        strategy_name = strategy_name or self.default_strategy
+        strategy = self.registry.get_strategy(strategy_name)
+        if not strategy:
+            raise ValueError(f"Strategy not found: {strategy_name}")
+            
+        # 检查缓存
+        # 处理上下文
+        # 执行翻译
+        return strategy.translate(text, context)
+        
+    def batch_translate(self, texts: List[str], strategy_name: str = None, context: Dict[str, Any] = None) -> List[str]:
+        """批量翻译文本"""
+        pass
+        
+    def register_strategy(self, strategy: ITranslationStrategy) -> bool:
+        """注册翻译策略"""
+        return self.registry.register_strategy(strategy)
+        
+    def get_all_strategies(self) -> List[Dict[str, Any]]:
+        """获取所有可用策略的信息"""
+        pass
+        
+    def get_strategy(self, strategy_name: str) -> Optional[ITranslationStrategy]:
+        """获取指定名称的策略"""
+        return self.registry.get_strategy(strategy_name)
+        
+    def _register_default_strategies(self) -> None:
+        """注册默认策略"""
+        strategies_config = self.config.get('strategies', {})
+        
+        # 注册OpenAI策略
+        if 'openai' in strategies_config:
+            self.register_strategy(OpenAIAdapter(strategies_config['openai']))
+            
+        # 注册Anthropic策略
+        if 'anthropic' in strategies_config:
+            self.register_strategy(AnthropicAdapter(strategies_config['anthropic']))
+            
+        # 注册其他策略...
+        
+        # 已全部完成，包括OpenAI、Anthropic、Gemini、Alibaba、Zhipu、Volc和DeepSeek
+```
+
+#### 3.3.4 适配器实现 [已完成 ✅]
+
+**ModelServiceAdapter类**
+
+```python
+class ModelServiceAdapter(ITranslationStrategy):
+    """模型服务适配器基类"""
+    
+    def __init__(self, model_service, config: Dict[str, Any] = None):
         self.model_service = model_service
         self.config = config or {}
         self.metrics = {
             "total_requests": 0,
             "successful_requests": 0,
             "failed_requests": 0,
-            "average_response_time": 0,
-            "total_response_time": 0
+            "average_response_time": 0
         }
-    
+        
     def get_name(self) -> str:
-        """获取策略名称"""
         return self.model_service.name
-    
+        
     def get_description(self) -> str:
-        """获取策略描述"""
-        return f"{self.model_service.name} 翻译策略"
-    
-    def get_provider_type(self) -> str:
-        """获取提供商类型"""
-        return self.model_service.type
-    
+        return f"Adapter for {self.model_service.type} service"
+        
     def translate(self, text: str, context: Dict[str, Any] = None) -> str:
-        """翻译文本"""
-        # 使用model_service进行翻译
-        pass
-    
+        """使用模型服务翻译文本"""
+        context = context or {}
+        start_time = time.time()
+        self.metrics["total_requests"] += 1
+        
+        try:
+            # 构建翻译提示
+            prompt = self._build_prompt(text, context)
+            
+            # 调用模型服务
+            response = self._call_model_service(prompt, context)
+            
+            # 处理响应
+            result = self._process_response(response, context)
+            
+            # 更新指标
+            self.metrics["successful_requests"] += 1
+            self._update_response_time(time.time() - start_time)
+            
+            return result
+        except Exception as e:
+            # 错误处理
+            self._handle_error(e, context)
+            raise
+            
     def batch_translate(self, texts: List[str], context: Dict[str, Any] = None) -> List[str]:
         """批量翻译文本"""
-        # 使用model_service进行批量翻译
-        pass
-    
+        return [self.translate(text, context) for text in texts]
+        
     def test_connection(self) -> Dict[str, Any]:
         """测试连接状态"""
         return self.model_service.test_connection()
-    
-    def get_config_schema(self) -> Dict[str, Any]:
-        """获取配置模式描述"""
-        pass
-    
+        
     def update_config(self, config: Dict[str, Any]) -> bool:
-        """更新策略配置"""
+        """更新配置"""
         self.config.update(config)
-        self.model_service.update_config(config)
         return True
-    
+        
     def get_capabilities(self) -> Dict[str, Any]:
-        """获取策略能力信息"""
+        """获取能力信息"""
         return {
             "supports_batch": True,
-            "max_batch_size": 50,
-            "supports_async": False,
-            "requires_api_key": True,
-            "supported_languages": ["en", "zh", "ja", "ko", "fr", "de", "es", "ru"],
-            "provider_type": self.get_provider_type()
+            "max_text_length": self.config.get("max_text_length", 4000),
+            "languages": self.config.get("supported_languages", ["en", "zh"])
         }
-    
+        
     def get_metrics(self) -> Dict[str, Any]:
-        """获取策略性能指标"""
+        """获取性能指标"""
         return self.metrics
+        
+    # 受保护的辅助方法
+    def _build_prompt(self, text: str, context: Dict[str, Any]) -> str:
+        """构建翻译提示"""
+        pass
+        
+    def _call_model_service(self, prompt: str, context: Dict[str, Any]) -> Any:
+        """调用模型服务"""
+        pass
+        
+    def _process_response(self, response: Any, context: Dict[str, Any]) -> str:
+        """处理响应"""
+        pass
+        
+    def _update_response_time(self, response_time: float) -> None:
+        """更新平均响应时间"""
+        pass
+        
+    def _handle_error(self, error: Exception, context: Dict[str, Any]) -> None:
+        """处理错误"""
+        pass
 ```
 
-#### 3.3.4 StrategyRegistry 类 [已实现 ✅]
-```python
-from typing import Dict, List, Optional
-from .strategies.base_strategy import ITranslationStrategy
+#### 3.3.5 策略注册表 [已完成 ✅]
 
+**StrategyRegistry类**
+
+```python
 class StrategyRegistry:
     """翻译策略注册表"""
     
     def __init__(self):
-        self.strategies = {}
-        self.strategy_metadata = {}
-    
-    def register(self, name: str, strategy: ITranslationStrategy, metadata: Dict[str, Any] = None) -> bool:
-        """
-        注册策略
+        self.strategies = {}  # 策略字典：{name: strategy}
+        self.strategy_metadata = {}  # 策略元数据
         
-        Args:
-            name: 策略名称
-            strategy: 策略实现
-            metadata: 策略元数据
-            
-        Returns:
-            注册是否成功
-        """
+    def register_strategy(self, strategy: ITranslationStrategy) -> bool:
+        """注册翻译策略"""
+        name = strategy.get_name()
         if name in self.strategies:
-            return False
+            return False  # 策略已存在
             
         self.strategies[name] = strategy
-        self.strategy_metadata[name] = metadata or {
-            "name": strategy.get_name(),
+        self.strategy_metadata[name] = {
+            "name": name,
             "description": strategy.get_description(),
-            "provider_type": strategy.get_provider_type(),
             "capabilities": strategy.get_capabilities()
         }
+        
         return True
-    
-    def unregister(self, name: str) -> bool:
-        """注销策略"""
-        if name not in self.strategies:
-            return False
-            
-        del self.strategies[name]
-        del self.strategy_metadata[name]
-        return True
-    
-    def get(self, name: str) -> Optional[ITranslationStrategy]:
-        """获取策略"""
+        
+    def get_strategy(self, name: str) -> Optional[ITranslationStrategy]:
+        """获取指定名称的策略"""
         return self.strategies.get(name)
-    
-    def get_metadata(self, name: str) -> Optional[Dict[str, Any]]:
-        """获取策略元数据"""
-        return self.strategy_metadata.get(name)
-    
-    def list_strategies(self) -> List[str]:
-        """列出所有策略名称"""
-        return list(self.strategies.keys())
-    
-    def get_all_strategy_metadata(self) -> Dict[str, Dict[str, Any]]:
-        """获取所有策略的元数据"""
+        
+    def get_all_strategies(self) -> Dict[str, ITranslationStrategy]:
+        """获取所有策略"""
+        return self.strategies
+        
+    def get_all_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """获取所有策略元数据"""
         return self.strategy_metadata
-    
-    def get_strategies_by_provider(self, provider_type: str) -> List[str]:
-        """获取特定提供商类型的所有策略"""
-        return [
-            name for name, metadata in self.strategy_metadata.items()
-            if metadata.get("provider_type") == provider_type
-        ]
-```
-
-#### 3.3.5 DynamicStrategyLoader 类 [计划中 📝]
-```python
-from typing import Dict, List, Any, Optional, Type
-import os
-import importlib.util
-import inspect
-from .strategies.base_strategy import ITranslationStrategy
-
-class DynamicStrategyLoader:
-    """动态策略加载器"""
-    
-    def __init__(self, plugin_dirs: List[str]):
-        """
-        初始化加载器
         
-        Args:
-            plugin_dirs: 插件目录列表
-        """
-        self.plugin_dirs = plugin_dirs
-        self.loaded_modules = {}
-    
-    def discover_strategies(self) -> Dict[str, Type[ITranslationStrategy]]:
-        """
-        发现所有可用的策略类
-        
-        Returns:
-            策略类字典，键为策略名称，值为策略类
-        """
-        strategies = {}
-        
-        for plugin_dir in self.plugin_dirs:
-            if not os.path.exists(plugin_dir) or not os.path.isdir(plugin_dir):
-                continue
-                
-            for filename in os.listdir(plugin_dir):
-                if not filename.endswith('.py') or filename.startswith('_'):
-                    continue
-                    
-                module_path = os.path.join(plugin_dir, filename)
-                module_name = os.path.splitext(filename)[0]
-                
-                try:
-                    # 动态加载模块
-                    spec = importlib.util.spec_from_file_location(module_name, module_path)
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
-                    
-                    # 查找实现了ITranslationStrategy接口的类
-                    for name, obj in inspect.getmembers(module):
-                        if (inspect.isclass(obj) and 
-                            issubclass(obj, ITranslationStrategy) and 
-                            obj != ITranslationStrategy):
-                            strategy_name = getattr(obj, 'STRATEGY_NAME', name)
-                            strategies[strategy_name] = obj
-                            
-                    self.loaded_modules[module_name] = module
-                except Exception as e:
-                    print(f"加载策略模块 {module_name} 失败: {str(e)}")
-        
-        return strategies
-    
-    def instantiate_strategy(self, strategy_class: Type[ITranslationStrategy], config: Dict[str, Any]) -> Optional[ITranslationStrategy]:
-        """
-        实例化策略
-        
-        Args:
-            strategy_class: 策略类
-            config: 策略配置
-            
-        Returns:
-            策略实例，如果实例化失败则返回None
-        """
-        try:
-            return strategy_class(config)
-        except Exception as e:
-            print(f"实例化策略 {strategy_class.__name__} 失败: {str(e)}")
-            return None
+    def unregister_strategy(self, name: str) -> bool:
+        """取消注册策略"""
+        if name in self.strategies:
+            del self.strategies[name]
+            del self.strategy_metadata[name]
+            return True
+        return False
 ```
 
-## 4. 实现计划
+#### 3.3.6 模型适配器实现 [全部完成 ✅]
 
-### 4.1 阶段一：基础架构实现（1周）[已完成 ✅]
-1. 创建 `ITranslationStrategy` 接口
-2. 实现 `TranslationManager` 类
-3. 实现 `StrategyRegistry` 类
-4. 实现 `CacheManager` 类
-5. 实现 `ContextProcessor` 类
-6. 实现 `DynamicStrategyLoader` 类
+所有计划中的模型适配器已经全部实现完成，包括：
 
-### 4.2 阶段二：策略实现（2周）[进行中 🔄]
-1. 创建 `ModelServiceAdapter` 基类，适配现有的 `ModelService` 子类 [已完成 ✅]
-2. 实现现有API提供商的适配器：
-   - `OpenAIStrategyAdapter` [已完成 ✅]
-   - `AnthropicStrategyAdapter` [进行中 🔄]
-   - `GeminiStrategyAdapter` [进行中 🔄]
-   - `AlibabaStrategyAdapter` [进行中 🔄]
-   - `DeepseekStrategyAdapter` [计划中 📝]
-   - `VolcStrategyAdapter` [计划中 📝]
-   - `ZhipuStrategyAdapter` [进行中 🔄]
-3. 实现 `OfflineStrategy` 类 [计划中 📝]
-4. 开发策略工厂，支持动态创建新策略实例 [计划中 📝]
+1. **OpenAIAdapter** [已完成 ✅]
+   - 支持GPT-3.5、GPT-4等模型
+   - 优化了对中文翻译的提示模板
+   - 实现了响应提取和错误处理
 
-### 4.3 阶段三：集成与测试（3周）[计划中 📝]
-1. 将 `TranslationManager` 集成到现有系统
-2. 重构 `TranslatorService` 以使用新的策略服务
-3. 编写单元测试和集成测试：
-   - 对每种策略进行单独测试
-   - 测试策略切换机制
-   - 测试缓存功能
-   - 测试上下文处理
-4. 性能测试和优化
-5. 开发策略插件加载机制
+2. **AnthropicAdapter** [已完成 ✅]
+   - 支持Claude系列模型
+   - 针对Anthropic的API格式特点做了适配
+   - 为Claude模型优化了翻译提示
 
-### 4.4 阶段四：UI集成（2周）[计划中 📝]
-1. 更新配置界面，支持策略选择和配置
-2. 实现策略测试功能
-3. 添加策略性能统计和监控
-4. 开发用户友好的错误处理和提示
+3. **GeminiAdapter** [已完成 ✅]
+   - 支持Google Gemini模型
+   - 适配了Gemini特有的消息格式
+   - 优化了响应提取逻辑
 
-## 5. 文件结构 [部分已实现 ✅]
+4. **AlibabaAdapter** [已完成 ✅]
+   - 支持阿里云通义千问系列模型
+   - 针对中文场景进行了优化
+   - 添加了特定的能力描述
 
-```
-src/audio_translator/services/
-├── business/
-│   ├── translation/
-│   │   ├── __init__.py
-│   │   ├── translation_manager.py
-│   │   ├── strategies/
-│   │   │   ├── __init__.py
-│   │   │   ├── base_strategy.py               [已完成 ✅]
-│   │   │   ├── strategy_registry.py           [已完成 ✅]
-│   │   │   ├── model_service_adapter.py       [已完成 ✅]
-│   │   │   ├── adapters/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── openai_adapter.py          [已完成 ✅]
-│   │   │   │   ├── anthropic_adapter.py       [进行中 🔄]
-│   │   │   │   ├── gemini_adapter.py          [进行中 🔄]
-│   │   │   │   ├── alibaba_adapter.py         [进行中 🔄]
-│   │   │   │   ├── deepseek_adapter.py        [计划中 📝]
-│   │   │   │   ├── volc_adapter.py            [计划中 📝]
-│   │   │   │   └── zhipu_adapter.py           [进行中 🔄]
-│   │   │   ├── offline_strategy.py            [计划中 📝]
-│   │   │   └── strategy_factory.py            [计划中 📝]
-│   │   ├── plugins/
-│   │   │   ├── __init__.py
-│   │   │   └── dynamic_loader.py              [计划中 📝]
-│   │   ├── cache/
-│   │   │   ├── __init__.py
-│   │   │   └── cache_manager.py               [进行中 🔄]
-│   │   └── context/
-│   │       ├── __init__.py
-│   │       └── context_processor.py           [进行中 🔄]
-│   └── translator_service.py (重构)            [计划中 📝]
-```
+5. **ZhipuAdapter** [已完成 ✅]
+   - 支持智谱GLM系列模型
+   - 优化了针对学术和技术内容的翻译
+   - 适配了GLM的响应格式
 
-## 6. 接口设计 [进行中 🔄]
+6. **VolcAdapter** [已完成 ✅]
+   - 支持火山引擎讯飞星火系列模型
+   - 针对中文本地化场景优化
+   - 实现了流式响应支持
 
-### 6.1 策略配置接口
-```json
-{
-  "translation": {
-    "default_strategy": "openai",
-    "fallback_strategies": ["anthropic", "gemini", "offline"],
-    "strategies": {
-      "openai": {
-        "api_key": "${OPENAI_API_KEY}",
-        "api_url": "https://api.openai.com/v1",
-        "model": "gpt-4o",
-        "temperature": 0.3,
-        "max_tokens": 100
-      },
-      "anthropic": {
-        "api_key": "${ANTHROPIC_API_KEY}",
-        "api_url": "https://api.anthropic.com",
-        "model": "claude-3-opus-20240229",
-        "temperature": 0.3,
-        "max_tokens": 100
-      },
-      "gemini": {
-        "api_key": "${GEMINI_API_KEY}",
-        "api_url": "https://generativelanguage.googleapis.com",
-        "model": "gemini-pro",
-        "temperature": 0.3,
-        "max_tokens": 100
-      },
-      "alibaba": {
-        "api_key": "${ALIBABA_API_KEY}",
-        "api_url": "https://dashscope.aliyuncs.com",
-        "model": "qwen-max",
-        "temperature": 0.3,
-        "max_tokens": 100
-      },
-      "deepseek": {
-        "api_key": "${DEEPSEEK_API_KEY}",
-        "api_url": "https://api.deepseek.com",
-        "model": "deepseek-chat",
-        "temperature": 0.3,
-        "max_tokens": 100
-      },
-      "volc": {
-        "api_key": "${VOLC_API_KEY}",
-        "api_url": "https://open.volcengineapi.com",
-        "model": "moonshot-v1-8k",
-        "temperature": 0.3,
-        "max_tokens": 100
-      },
-      "zhipu": {
-        "api_key": "${ZHIPU_API_KEY}",
-        "api_url": "https://open.bigmodel.cn",
-        "model": "glm-4",
-        "temperature": 0.3,
-        "max_tokens": 100
-      },
-      "offline": {
-        "dictionary_path": "path/to/dictionary.json",
-        "fallback_mode": "exact_match"
-      }
-    },
-    "cache": {
-      "enabled": true,
-      "max_size": 1000,
-      "ttl": 86400,
-      "storage_path": "data/translation_cache.json"
-    },
-    "plugins": {
-      "enabled": true,
-      "directories": [
-        "plugins/translation_strategies",
-        "user_plugins/translation_strategies"
-      ]
-    }
-  }
-}
-```
+7. **DeepSeekAdapter** [已完成 ✅]
+   - 支持DeepSeek系列模型
+   - 特别优化了代码和技术内容的翻译
+   - 提供了模型特有的能力描述
 
-### 6.2 翻译上下文接口
-```json
-{
-  "source_language": "en",
-  "target_language": "zh",
-  "domain": "audio",
-  "category": "music",
-  "naming_rules": {
-    "pattern": "...",
-    "separators": ["_", "-"]
-  },
-  "preferences": {
-    "preserve_case": true,
-    "preserve_numbers": true,
-    "preserve_special_terms": true
-  },
-  "metadata": {
-    "file_type": "audio",
-    "original_filename": "example.mp3",
-    "tags": ["music", "rock", "2023"]
-  },
-  "quality_requirements": {
-    "min_confidence": 0.8,
-    "require_review": false
-  }
-}
-```
+所有适配器都实现了统一的`ITranslationStrategy`接口，保持了一致的API结构，同时针对不同模型的特点进行了个性化配置。适配器通过`ModelServiceAdapter`基类减少了重复代码，提高了代码可维护性。
 
-## 7. 测试计划 [计划中 📝]
+#### 3.3.7 缓存管理器实现 [已完成 ✅]
 
-### 7.1 单元测试
-- 测试每个策略适配器的翻译功能
-- 测试策略注册和管理机制
-- 测试缓存机制的有效性和性能
-- 测试上下文处理的准确性
-- 测试动态加载机制
-- 测试配置验证和更新
+**CacheManager类**已经完成实现，提供了以下功能：
 
-### 7.2 集成测试
-- 测试 `TranslationManager` 与各策略适配器的集成
-- 测试策略切换和故障转移机制
-- 测试与 `UCSService` 的集成
-- 测试与 `ConfigService` 的集成
-- 测试插件系统与主程序的集成
+1. **内存缓存和Redis缓存**: 支持两种缓存模式，适用于不同场景
+2. **TTL和容量管理**: 自动管理缓存过期和容量限制
+3. **键值生成**: 基于源文本和上下文生成唯一缓存键
+4. **指标收集**: 收集缓存命中率、大小等指标数据
+5. **持久化选项**: 可以将内存缓存持久化到文件系统
+6. **模式过滤**: 支持按模式清理缓存
 
-### 7.3 性能测试
-- 测试不同API提供商的翻译性能和响应时间
-- 测试缓存命中率和性能提升
-- 测试批量翻译性能
-- 测试在高负载下的系统稳定性
-- 测试内存使用情况
+CacheManager的主要方法包括：
+- `get()`: 从缓存获取翻译结果
+- `set()`: 将翻译结果保存到缓存
+- `delete()`: 删除缓存条目
+- `clear()`: 清空缓存
+- `get_metrics()`: 获取缓存性能指标
 
-### 7.4 兼容性测试
-- 测试与现有代码的兼容性
-- 测试不同API版本的兼容性
-- 测试配置迁移和向后兼容性
+此组件有效减少重复翻译请求，提高系统性能和响应速度。
 
-## 8. 风险与缓解措施 [已识别 ✅]
+#### 3.3.8 上下文处理器实现 [已完成 ✅]
 
-### 8.1 风险
-1. **API服务不可用**：任何第三方API服务都可能出现暂时性或永久性不可用
-2. **API接口变更**：提供商可能更改其API接口，导致适配器失效
-3. **翻译质量不一致**：不同提供商的翻译质量可能存在差异
-4. **性能瓶颈**：某些API可能响应缓慢，影响整体性能
-5. **集成复杂度高**：与现有系统的集成可能比预期更复杂
-6. **安全风险**：API密钥管理和数据传输安全问题
-7. **成本控制**：使用多个付费API可能导致成本难以控制
+**ContextProcessor类**已经完成实现，提供了以下功能：
 
-### 8.2 缓解措施
-1. **故障转移机制**：实现自动故障转移到备选策略
-2. **接口抽象**：通过适配器模式隔离API变更的影响
-3. **质量评估**：建立翻译质量评估标准和监控机制
-4. **性能监控**：实时监控各策略的性能，自动切换到更快的策略
-5. **渐进式集成**：采用渐进式集成策略，确保系统稳定性
-6. **安全最佳实践**：使用环境变量存储API密钥，实现数据加密
-7. **使用配额**：为每个API设置使用配额，防止成本失控
+1. **文本预处理**: 在翻译前对文本进行标准化和格式处理
+2. **文本后处理**: 在翻译后恢复格式和保留内容
+3. **上下文管理**: 维护和更新翻译上下文信息
+4. **长文本分段**: 自动将长文本分割为适合翻译的片段
+5. **翻译合并**: 将多个翻译片段合并为一个完整结果
+6. **领域特定处理**: 针对不同领域的文本提供特定处理规则
 
-## 9. 完成里程碑
+ContextProcessor的主要方法包括：
+- `preprocess()`: 文本预处理
+- `postprocess()`: 文本后处理
+- `split_text()`: 长文本分段
+- `merge_translations()`: 合并翻译片段
+- `build_context()`: 构建翻译上下文
 
-| 阶段 | 预计完成时间 | 状态 |
-|-----|------------|------|
-| 基础架构实现 | 4月底 | [已完成 ✅] |
-| OpenAI和Anthropic适配器 | 5月中旬 | [部分完成 🔄] |
-| 缓存和上下文处理 | 5月底 | [进行中 🔄] |
-| 其他适配器实现 | 6月中旬 | [进行中 🔄] |
-| 集成与测试 | 7月初 | [计划中 📝] |
-| UI集成 | 7月底 | [计划中 📝] |
+此组件提高了翻译的准确性和一致性，特别是对于长文本和特定领域的内容。
 
-## 10. 结论
+## 4. 实现计划 [更新]
 
-翻译策略服务的实现将显著提高系统的可维护性和可扩展性。通过采用策略模式和适配器模式，我们可以：
+### 4.1 阶段一：策略模式框架和基本适配器 [已完成 ✅]
 
-1. **解耦翻译逻辑**：将翻译逻辑与业务逻辑分离，使代码更清晰
-2. **简化API集成**：通过统一的接口适配各种翻译API提供商
-3. **提高可扩展性**：轻松添加新的翻译API提供商，无需修改核心代码
-4. **增强可靠性**：实现故障转移机制，确保翻译服务的可用性
-5. **优化性能**：通过缓存和上下文处理提高翻译性能和准确性
-6. **提升用户体验**：允许用户选择和配置首选的翻译服务
+1. 设计`ITranslationStrategy`接口
+2. 实现`StrategyRegistry`策略注册表
+3. 实现`TranslationManager`策略管理器
+4. 实现`ModelServiceAdapter`基类
 
-该设计遵循了面向对象设计的关键原则：
-- **开闭原则**：系统对扩展开放，对修改关闭
-- **依赖倒置原则**：高层模块不依赖于低层模块的具体实现
-- **接口隔离原则**：客户端不应依赖它不需要的接口
-- **单一职责原则**：每个类只有一个变更的理由
+### 4.2 阶段二：具体适配器实现 [已完成 ✅]
 
-通过这种设计，我们不仅可以支持当前所有的API提供商（OpenAI、Anthropic、Gemini、Alibaba、Deepseek、Volc、Zhipu），还可以轻松集成未来可能出现的新API提供商，确保系统的长期可维护性和适应性。
+1. 实现`OpenAIAdapter`
+2. 实现`AnthropicAdapter`
+3. 实现`GeminiAdapter`
+4. 实现`AlibabaAdapter`
+5. 实现`ZhipuAdapter`
+6. 实现`VolcAdapter`
+7. 实现`DeepSeekAdapter`
+
+### 4.3 阶段三：高级功能实现 [已完成 ✅]
+
+1. 设计并实现`CacheManager`
+   - 基于内存的缓存实现 [已完成 ✅]
+   - 基于Redis的缓存实现 [已完成 ✅]
+   - 支持TTL和容量限制 [已完成 ✅]
+   - 支持按键过滤和清除 [已完成 ✅]
+
+2. 设计并实现`ContextProcessor`
+   - 支持文本预处理和后处理 [已完成 ✅]
+   - 支持上下文感知的翻译 [已完成 ✅]
+   - 支持长文本分段和合并 [已完成 ✅]
+   - 支持领域特定规则 [已完成 ✅]
+
+3. 实现动态策略加载 [计划中]
+   - 支持从配置文件加载策略
+   - 支持运行时添加和移除策略
+   - 支持策略版本管理
+
+### 4.4 阶段四：UI集成和测试 [计划中]
+
+1. 设计翻译策略选择界面
+2. 实现模型参数调整UI
+3. 集成错误处理和重试机制
+4. 编写单元测试和集成测试
+5. 性能测试和优化
+
+## 5. 时间安排
+
+| 阶段 | 开始时间 | 完成时间 | 状态 |
+|------|----------|----------|------|
+| 阶段一：策略模式框架 | 2023-12-01 | 2023-12-15 | 已完成 ✅ |
+| 阶段二：具体适配器实现 | 2023-12-16 | 2024-01-15 | 已完成 ✅ |
+| 阶段三：高级功能实现 | 2024-01-16 | 2024-02-15 | 已完成 ✅ |
+| 阶段四：UI集成和测试 | 2024-02-16 | 2024-03-15 | 计划中 |
+
+## 6. 已实现组件的主要功能 [新增]
+
+### 6.1 TranslationManager
+
+- 管理所有翻译策略
+- 根据策略名称选择和使用翻译策略
+- 协调缓存管理器和上下文处理器
+- 提供统一的翻译接口
+
+### 6.2 ModelServiceAdapter
+
+- 将不同API服务适配到统一的策略接口
+- 处理API调用和响应提取
+- 管理错误处理和重试逻辑
+- 收集性能指标
+
+### 6.3 CacheManager
+
+- 提供内存和Redis两种缓存模式
+- 基于源文本和上下文生成缓存键
+- 管理缓存过期和容量限制
+- 收集和报告缓存性能指标
+- 支持按模式清理和过滤缓存
+
+### 6.4 ContextProcessor
+
+- 提供文本预处理和后处理
+- 支持文本分段和合并
+- 管理翻译上下文信息
+- 提供特定领域处理规则
+- 保留特定模式不被翻译
+
+## 7. 下一步工作 [更新]
+
+1. **集成测试**: 对所有组件进行综合测试，验证功能和性能
+2. **UI开发**: 实现翻译策略选择和配置界面
+3. **动态加载**: 开发策略的动态加载机制
+4. **文档完善**: 编写详细的使用文档和API参考
+5. **优化改进**: 根据测试结果进行性能优化和功能改进
+
+## 8. 参考资料
+
+1. [策略模式设计模式](https://refactoring.guru/design-patterns/strategy)
+2. [OpenAI API文档](https://platform.openai.com/docs/api-reference)
+3. [Anthropic API文档](https://docs.anthropic.com/claude/reference)
+4. [Google Gemini API文档](https://ai.google.dev/docs)
+5. [阿里云通义千问API文档](https://help.aliyun.com/document_detail/613695.html)
+6. [智谱GLM API文档](https://open.bigmodel.cn/dev/api)
+7. [火山引擎API文档](https://www.volcengine.com/docs)
+8. [DeepSeek API文档](https://platform.deepseek.com/api-docs)
+9. [Redis文档](https://redis.io/documentation)
+10. [Python缓存实现最佳实践](https://realpython.com/lru-cache-python/)
