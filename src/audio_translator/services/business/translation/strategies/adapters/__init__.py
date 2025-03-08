@@ -1,7 +1,19 @@
 """
-翻译策略适配器模块
+翻译策略适配器包
 
-此模块包含各种API服务的适配器实现，将不同的API服务适配为统一的翻译策略接口。
+包含各种API服务的适配器实现，将ModelService适配为ITranslationStrategy接口。
 """
 
-# 在后续开发中会导入具体的适配器实现 
+from .openai_adapter import OpenAIAdapter
+from .anthropic_adapter import AnthropicAdapter
+from .gemini_adapter import GeminiAdapter
+from .alibaba_adapter import AlibabaAdapter
+from .zhipu_adapter import ZhipuAdapter
+
+__all__ = [
+    'OpenAIAdapter',
+    'AnthropicAdapter',
+    'GeminiAdapter',
+    'AlibabaAdapter',
+    'ZhipuAdapter',
+] 

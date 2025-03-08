@@ -13,6 +13,10 @@ from ...core.service_factory import ServiceFactory
 from ...core.interfaces import ITranslationStrategy, INamingRule
 from .strategies.strategy_registry import StrategyRegistry
 from .strategies.adapters.openai_adapter import OpenAIAdapter
+from .strategies.adapters.anthropic_adapter import AnthropicAdapter
+from .strategies.adapters.gemini_adapter import GeminiAdapter
+from .strategies.adapters.alibaba_adapter import AlibabaAdapter
+from .strategies.adapters.zhipu_adapter import ZhipuAdapter
 
 # 设置日志记录器
 logger = logging.getLogger(__name__)
@@ -91,14 +95,37 @@ class TranslationManager(BaseService):
     def _register_default_strategies(self):
         """注册默认翻译策略"""
         try:
+            # 获取配置信息
+            strategies_config = self.config.get('strategies', {})
+            
             # 注册OpenAI策略
-            openai_config = self.config.get('strategies', {}).get('openai', {})
-            openai_adapter = OpenAIAdapter(openai_config)
-            self.strategy_registry.register('openai', openai_adapter)
+            openai_config = strategies_config.get('openai', {})
+            self.strategy_registry.register('openai', OpenAIAdapter(openai_config))
             
-            # 在后续实现中添加更多策略
+            # 注册Anthropic策略
+            anthropic_config = strategies_config.get('anthropic', {})
+            self.strategy_registry.register('anthropic', AnthropicAdapter(anthropic_config))
             
-            logger.info("成功注册默认翻译策略")
+            # 注册Gemini策略
+            gemini_config = strategies_config.get('gemini', {})
+            self.strategy_registry.register('gemini', GeminiAdapter(gemini_config))
+            
+            # 注册阿里通义策略
+            alibaba_config = strategies_config.get('alibaba', {})
+            self.strategy_registry.register('alibaba', AlibabaAdapter(alibaba_config))
+            
+            # 注册智谱AI策略
+            zhipu_config = strategies_config.get('zhipu', {})
+            self.strategy_registry.register('zhipu', ZhipuAdapter(zhipu_config))
+            
+            # 设置默认策略
+            default_strategy = self.config.get('default_strategy', 'openai')
+            if self.strategy_registry.has(default_strategy):
+                self._default_strategy = default_strategy
+            elif self.strategy_registry.list_strategies():
+                self._default_strategy = self.strategy_registry.list_strategies()[0]
+            
+            logger.info(f"成功注册{len(self.strategy_registry.list_strategies())}个翻译策略")
         except Exception as e:
             logger.error(f"注册默认翻译策略失败: {e}")
     
