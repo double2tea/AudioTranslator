@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Any, Optional, Type, Set
 
 from .base_service import BaseService
+from .interfaces import IServiceRegistry
 from ..infrastructure.file_service import FileService
 from ..business.audio_service import AudioService
 from ..infrastructure.config_service import ConfigService
@@ -28,7 +29,7 @@ from ..api.providers.deepseek.deepseek_service import DeepSeekService
 # 设置日志记录器
 logger = logging.getLogger(__name__)
 
-class ServiceFactory:
+class ServiceFactory(IServiceRegistry):
     """
     服务工厂类
     
@@ -40,6 +41,16 @@ class ServiceFactory:
     - 确保服务的正确初始化和关闭
     """
     
+    # 单例实例
+    _instance = None
+    
+    @classmethod
+    def get_instance(cls):
+        """获取单例实例"""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+    
     def __init__(self):
         """初始化服务工厂"""
         # 存储已创建的服务实例
@@ -48,6 +59,8 @@ class ServiceFactory:
         self._initialized_services: Set[str] = set()
         # 记录服务依赖关系
         self._dependencies: Dict[str, Set[str]] = {}
+        # 服务配置
+        self._services_config: Dict[str, Dict[str, Any]] = {}
         
         # 注册核心服务
         self._register_core_services()
@@ -74,7 +87,60 @@ class ServiceFactory:
         # 注册翻译服务（依赖配置服务和UCS服务）
         self._dependencies["translator_service"] = {"config_service", "ucs_service"}
         
+        # 注册分类服务（依赖配置服务）
+        self._dependencies["category_service"] = {"config_service"}
+        
+        # 注册主题服务（依赖配置服务）
+        self._dependencies["theme_service"] = {"config_service"}
+        
         logger.debug("核心服务已注册")
+    
+    def register_service(self, service_name: str, service_instance: Any) -> bool:
+        """
+        注册服务实例
+        
+        Args:
+            service_name: 服务名称
+            service_instance: 服务实例
+            
+        Returns:
+            注册是否成功
+        """
+        try:
+            if not isinstance(service_instance, BaseService):
+                logger.warning(f"注册服务失败: {service_name} 不是BaseService的实例")
+                return False
+                
+            self._services[service_name] = service_instance
+            
+            # 如果服务已初始化，添加到已初始化服务集合
+            if service_instance.is_available():
+                self._initialized_services.add(service_name)
+                
+            logger.info(f"成功注册服务: {service_name}")
+            return True
+        except Exception as e:
+            logger.error(f"注册服务失败: {service_name}, {e}")
+            return False
+    
+    def register_service_config(self, service_name: str, service_config: Dict[str, Any]) -> bool:
+        """
+        注册服务配置
+        
+        Args:
+            service_name: 服务名称
+            service_config: 服务配置
+            
+        Returns:
+            注册是否成功
+        """
+        try:
+            self._services_config[service_name] = service_config
+            logger.info(f"成功注册服务配置: {service_name}")
+            return True
+        except Exception as e:
+            logger.error(f"注册服务配置失败: {service_name}, {e}")
+            return False
     
     def get_service(self, service_name: str) -> Optional[BaseService]:
         """
@@ -92,8 +158,8 @@ class ServiceFactory:
         if service_name in self._services and service_name in self._initialized_services:
             return self._services[service_name]
         
-        # 如果服务未注册，返回 None
-        if service_name not in self._dependencies:
+        # 如果服务未注册且不在依赖关系中，返回 None
+        if service_name not in self._dependencies and service_name not in self._services:
             logger.error(f"未注册的服务类型 '{service_name}'")
             return None
         
@@ -115,6 +181,18 @@ class ServiceFactory:
             return None
         
         return self._services[service_name]
+    
+    def has_service(self, service_name: str) -> bool:
+        """
+        检查服务是否存在
+        
+        Args:
+            service_name: 服务名称
+            
+        Returns:
+            服务是否存在
+        """
+        return service_name in self._services
     
     def _create_service(self, service_name: str) -> Optional[BaseService]:
         """
