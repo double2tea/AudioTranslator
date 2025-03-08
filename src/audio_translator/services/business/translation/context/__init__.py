@@ -1,9 +1,9 @@
 """
-翻译上下文处理模块
+翻译上下文处理包
 
-此模块提供翻译上下文的处理功能，包括上下文构建、增强和验证。
+提供翻译上下文管理、文本预处理和后处理功能
 """
 
 from .context_processor import ContextProcessor
 
-__all__ = ["ContextProcessor"] 
+__all__ = ['ContextProcessor'] 
