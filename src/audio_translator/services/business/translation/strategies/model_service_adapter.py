@@ -9,7 +9,7 @@ import logging
 import time
 from typing import Dict, List, Any, Optional
 
-from .....core.interfaces import ITranslationStrategy
+from ....core.interfaces import ITranslationStrategy
 from .....services.api.model_service import ModelService
 
 # 设置日志记录器

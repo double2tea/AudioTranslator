@@ -7,7 +7,7 @@
 import logging
 from typing import Dict, List, Any, Optional, Type
 
-from .....core.interfaces import ITranslationStrategy
+from ....core.interfaces import ITranslationStrategy
 
 # 设置日志记录器
 logger = logging.getLogger(__name__)

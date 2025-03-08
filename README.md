@@ -13,6 +13,52 @@
 - **配置保存**：自动保存服务配置，实现便捷的重复使用
 - **音频处理**：支持多种格式的音频文件处理和转换
 - **翻译服务**：利用AI模型进行高质量的音频内容翻译
+- **UCS命名规则**：支持统一的音频文件命名规则系统
+- **可扩展API接口**：易于集成新的AI服务提供商
+- **策略模式设计**：灵活切换不同的翻译策略和命名规则
+
+## 开发路线图
+
+我们正在按照以下开发计划推进项目优化：
+
+### 已完成的开发计划文档
+
+1. **翻译策略服务开发计划**
+   - 重构翻译服务为基于策略模式的架构
+   - 支持多种翻译接口（OpenAI、Anthropic、Gemini、Alibaba、Deepseek、Volc、Zhipu等）
+   - 实现面向接口编程，降低代码耦合度
+   - 添加翻译结果缓存机制和上下文感知处理
+
+2. **UCS命名规则增强计划**
+   - 改进统一命名标准
+   - 优化分类规则和翻译规则
+   - 提高命名规则的可配置性
+
+3. **命名服务开发计划**
+   - 实现多样化的命名规则
+   - 提供自定义模板系统
+   - 实现规则注册和验证机制
+   - 与分类服务集成
+
+4. **核心服务重构计划**
+   - 定义清晰的接口和抽象基类
+   - 改进服务注册和发现机制
+   - 分离翻译策略和命名规则逻辑
+   - 确保向后兼容性
+
+5. **分类服务优化计划**
+   - 统一CategoryService和CategoryManager
+   - 优化分类猜测算法
+   - 提供命名规则支持所需的接口
+   - 明确UI和业务逻辑之间的责任分离
+
+### 后续计划
+
+- 完成翻译策略服务的实现
+- 更新UI以支持新的翻译和命名功能
+- 优化性能和用户体验
+- 完善测试覆盖率
+- 扩展文档和用户指南
 
 ## 系统要求
 
@@ -116,7 +162,7 @@ python -m src.audio_translator
 
 ### 支持的服务类型
 
-应用程序支持以下AI服务提供商：
+应用程序支持以下AI服务提供商接口：
 
 | 服务名称 | 服务类型 | 默认API URL |
 |---------|---------|------------|
@@ -171,9 +217,20 @@ audio-translator/
 │   │   │       ├── theme_service.py         # 主题服务
 │   │   │       └── ucs/                    # 统一通信服务
 │   │   │           └── ucs_service.py      # UCS实现
+│   │   │       ├── translation/            # 新的翻译策略服务
+│   │   │           ├── translation_manager.py  # 翻译管理器
+│   │   │           ├── strategies/         # 翻译策略
+│   │   │           ├── cache/              # 缓存管理
+│   │   │           └── plugins/            # 插件系统
 │   │   └── utils/              # 工具函数
 │   └── __main__.py             # 程序入口
 ├── tests/                      # 测试目录
+├── docs/                       # 文档目录
+│   ├── translation_strategy_service_plan.md    # 翻译策略服务开发计划
+│   ├── ucs_naming_rules_enhancement.md         # UCS命名规则增强计划
+│   ├── naming_service_development_plan.md      # 命名服务开发计划
+│   ├── core_service_refactoring_plan.md        # 核心服务重构计划
+│   └── category_service_optimization_plan.md   # 分类服务优化计划
 ├── config.json                 # 全局配置文件
 ├── config.py                   # 配置模块
 ├── category_manager.py         # 类别管理器
@@ -214,17 +271,20 @@ flowchart TD
         I[CategoryService]
         J[ThemeService]
         K[UCSService]
+        T[TranslationManager]
+        N[NamingService]
     end
     
     subgraph API层[API层API]
         L[ModelService]
         M[OpenAIService]
-        N[AnthropicService]
-        O[GeminiService]
-        P[VolcEngineService]
-        Q[ZhipuAIService]
-        R[AlibabaService]
-        S[DeepSeekService]
+        OA[AnthropicService]
+        GA[GeminiService]
+        V[VolcEngineService]
+        Z[ZhipuAIService]
+        AL[AlibabaService]
+        DS[DeepSeekService]
+        TS[策略适配器]
     end
     
     B --> C
@@ -236,16 +296,56 @@ flowchart TD
     B --> I
     B --> J
     B --> K
+    B --> T
+    B --> N
     C --> D
     D --> L
     L --> M
-    L --> N
-    L --> O
-    L --> P
-    L --> Q
-    L --> R
-    L --> S
+    L --> OA
+    L --> GA
+    L --> V
+    L --> Z
+    L --> AL
+    L --> DS
     H --> K
+    H --> T
+    T --> TS
+    TS --> M
+    TS --> OA
+    TS --> GA
+    TS --> V
+    TS --> Z
+    TS --> AL
+    TS --> DS
+```
+
+## 翻译策略服务架构
+
+新的翻译策略服务采用策略模式和适配器模式，提供了灵活的翻译接口集成架构：
+
+```mermaid
+graph TD
+    A[TranslationManager] --> B[StrategyRegistry]
+    B --> C1[OpenAIStrategy]
+    B --> C2[AnthropicStrategy]
+    B --> C3[GeminiStrategy]
+    B --> C4[DeepseekStrategy]
+    B --> C5[AlibabaStrategy]
+    B --> C6[VolcStrategy]
+    B --> C7[ZhipuStrategy]
+    B --> C8[OfflineStrategy]
+    B --> C9[DynamicStrategyLoader]
+    A --> D[ContextProcessor]
+    A --> E[CacheManager]
+    F[ConfigService] --> A
+    G[UCSService] --> A
+    H[ModelServiceFactory] --> C1
+    H --> C2
+    H --> C3
+    H --> C4
+    H --> C5
+    H --> C6
+    H --> C7
 ```
 
 ## 配置文件
@@ -339,6 +439,7 @@ API密钥管理有以下几种方式：
 2. 在`api/providers/`目录下创建新的提供商目录
 3. 实现必要的方法：`test_connection`, `list_models`, `chat_completion`, `validate_config`
 4. 在`service_manager_service.py`中注册新服务
+5. 如需集成到翻译策略，创建对应的策略适配器
 
 示例：
 ```python
@@ -368,29 +469,6 @@ class NewService(ModelService):
     def validate_config(self) -> Dict[str, Any]:
         # 验证配置有效性
         pass
-```
-
-然后在`core/service_manager_service.py`中：
-```python
-@staticmethod
-def get_available_services() -> List[str]:
-    return ['openai', 'anthropic', 'gemini', 'azure', 'volcengine', 'zhipuai', 
-            'alibaba', 'deepseek', 'newservice']
-    
-@staticmethod
-def get_service_class(service_type: str) -> type:
-    service_classes = {
-        'openai': OpenAIService,
-        'anthropic': AnthropicService,
-        'gemini': GeminiService,
-        'azure': AzureOpenAIService,
-        'volcengine': VolcEngineService,
-        'zhipuai': ZhipuAIService,
-        'alibaba': AlibabaService,
-        'deepseek': DeepSeekService,
-        'newservice': NewService
-    }
-    return service_classes.get(service_type)
 ```
 
 ### 自定义UI
@@ -443,7 +521,26 @@ UI组件基于Tkinter构建，可以通过修改`gui`目录下的文件来自定
 
 4. **与API获取的模型共存**：自定义模型可以与从API获取的标准模型列表共存，并且在刷新模型列表时不会被覆盖。
 
-这一功能使得用户可以更灵活地使用各种AI服务提供的模型，特别是那些尚未正式列入服务提供商API返回列表的新模型。
+### 翻译策略服务
+
+正在开发的翻译策略服务将提供以下功能：
+
+1. **多接口支持**：支持所有已集成的API接口（OpenAI、Anthropic、Gemini、Alibaba、Deepseek、Volc、Zhipu等）
+2. **策略模式**：允许动态切换不同的翻译策略
+3. **接口适配**：通过适配器模式集成各种翻译接口
+4. **缓存机制**：优化性能，减少重复翻译请求
+5. **插件系统**：支持动态加载新的翻译策略实现
+6. **故障转移**：当首选服务不可用时自动切换到备选服务
+7. **上下文处理**：提供上下文感知的翻译能力
+
+### 统一命名规则系统
+
+通过UCS命名规则增强计划和命名服务开发，将提供以下功能：
+
+1. **规则模板化**：支持自定义命名规则模板
+2. **规则验证**：确保生成的名称符合预定义标准
+3. **与分类系统集成**：基于文件分类应用不同的命名规则
+4. **批量处理**：支持对多个文件应用统一命名规则
 
 ---
 
