@@ -7,6 +7,8 @@
 
 import logging
 from typing import Dict, List, Any, Optional
+import time
+import os
 
 from ...core.base_service import BaseService
 from ...core.service_factory import ServiceFactory
@@ -19,6 +21,9 @@ from .strategies.adapters.alibaba_adapter import AlibabaAdapter
 from .strategies.adapters.zhipu_adapter import ZhipuAdapter
 from .strategies.adapters.volc_adapter import VolcAdapter
 from .strategies.adapters.deepseek_adapter import DeepSeekAdapter
+from .strategies.dynamic_strategy_loader import DynamicStrategyLoader
+from .cache.cache_manager import CacheManager
+from .context.context_processor import ContextProcessor
 
 # 设置日志记录器
 logger = logging.getLogger(__name__)
@@ -34,7 +39,7 @@ class TranslationManager(BaseService):
     - 应用命名规则生成最终文件名
     """
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Dict[str, Any] = None):
         """
         初始化翻译管理器
         
@@ -56,6 +61,28 @@ class TranslationManager(BaseService):
         # 依赖服务
         self._category_service = None
         self._ucs_service = None
+        
+        # 初始化缓存管理器
+        cache_config = self.config.get('cache', {})
+        self.cache_manager = CacheManager(cache_config)
+        
+        # 初始化上下文处理器
+        context_config = self.config.get('context', {})
+        self.context_processor = ContextProcessor(context_config)
+        
+        # 初始化动态策略加载器
+        config_dir = self.config.get('config_dir', None)
+        plugins_dir = self.config.get('plugins_dir', None)
+        self.strategy_loader = DynamicStrategyLoader(self.strategy_registry, config_dir, plugins_dir)
+        
+        # 运行指标
+        self.metrics = {
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "average_response_time": 0,
+            "last_updated": time.time()
+        }
     
     def initialize(self) -> bool:
         """
@@ -81,8 +108,25 @@ class TranslationManager(BaseService):
             self._register_default_strategies()
             self._register_default_rules()
             
+            # 从配置文件加载策略
+            if self.config.get('load_from_config', True):
+                config_file = self.config.get('strategies_config_file', None)
+                loaded_count = self.strategy_loader.load_from_config(config_file)
+                logger.info(f"从配置文件加载了 {loaded_count} 个策略")
+                
+            # 从插件目录加载策略
+            if self.config.get('load_from_plugins', True):
+                plugins_dir = self.config.get('plugins_dir', None)
+                loaded_count = self.strategy_loader.load_from_directory(plugins_dir)
+                logger.info(f"从插件目录加载了 {loaded_count} 个策略")
+            
+            # 初始化缓存管理器
+            if self.cache_manager:
+                self.cache_manager.initialize()
+            
             self.is_initialized = True
             logger.info("翻译管理器初始化成功")
+            logger.info(f"可用策略: {', '.join(self.strategy_registry.list_strategies())}")
             return True
         except Exception as e:
             logger.error(f"翻译管理器初始化失败: {e}")
@@ -257,8 +301,6 @@ class TranslationManager(BaseService):
             包含翻译结果和文件信息的字典
         """
         try:
-            import os
-            
             # 获取文件名和扩展名
             file_name = os.path.basename(file_path)
             name, ext = os.path.splitext(file_name)
@@ -462,4 +504,168 @@ class TranslationManager(BaseService):
             'translated_name': translated,
             'preview': final_name,
             'context': ctx
-        } 
+        }
+    
+    def translate(self, text: str, strategy_name: str = None, context: Dict[str, Any] = None) -> str:
+        """
+        使用指定策略翻译文本
+        
+        Args:
+            text: 要翻译的文本
+            strategy_name: 策略名称，如果为None则使用默认策略
+            context: 上下文信息
+            
+        Returns:
+            翻译后的文本
+            
+        Raises:
+            ValueError: 当策略不存在时
+        """
+        start_time = time.time()
+        self.metrics["total_requests"] += 1
+        
+        try:
+            # 使用指定策略或默认策略
+            strategy_name = strategy_name or self._default_strategy
+            strategy = self.strategy_registry.get(strategy_name)
+            
+            if not strategy:
+                error_msg = f"策略不存在: {strategy_name}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+                
+            # 准备上下文
+            context = context or {}
+            
+            # 检查缓存是否存在译文
+            if self.cache_manager and self.config.get('use_cache', True):
+                cached_translation = self.cache_manager.get(text, context)
+                if cached_translation:
+                    logger.debug(f"使用缓存的翻译结果: {strategy_name}")
+                    self.metrics["successful_requests"] += 1
+                    self._update_response_time(time.time() - start_time)
+                    return cached_translation
+            
+            # 预处理文本
+            if self.context_processor:
+                processed_text, updated_context = self.context_processor.preprocess(text, context)
+            else:
+                processed_text, updated_context = text, context
+            
+            # 检查是否需要分段处理
+            max_length = strategy.get_capabilities().get('max_text_length', 4000)
+            if len(processed_text) > max_length and self.context_processor:
+                # 分段处理
+                segments = self.context_processor.split_text(processed_text, updated_context)
+                translations = []
+                
+                for segment_text, segment_context in segments:
+                    segment_translation = strategy.translate(segment_text, segment_context)
+                    translations.append(segment_translation)
+                
+                # 合并翻译结果
+                translation = self.context_processor.merge_translations(
+                    translations, 
+                    [segment_context for _, segment_context in segments]
+                )
+            else:
+                # 直接翻译
+                translation = strategy.translate(processed_text, updated_context)
+            
+            # 后处理翻译结果
+            if self.context_processor:
+                translation = self.context_processor.postprocess(translation, updated_context)
+            
+            # 缓存翻译结果
+            if self.cache_manager and self.config.get('use_cache', True):
+                self.cache_manager.set(text, translation, context)
+            
+            # 更新指标
+            self.metrics["successful_requests"] += 1
+            self._update_response_time(time.time() - start_time)
+            
+            return translation
+        except Exception as e:
+            logger.error(f"翻译失败: {e}")
+            self.metrics["failed_requests"] += 1
+            raise
+    
+    def batch_translate(self, texts: List[str], strategy_name: str = None, context: Dict[str, Any] = None) -> List[str]:
+        """
+        批量翻译文本
+        
+        Args:
+            texts: 要翻译的文本列表
+            strategy_name: 策略名称，如果为None则使用默认策略
+            context: 上下文信息
+            
+        Returns:
+            翻译后的文本列表
+        """
+        results = []
+        
+        for text in texts:
+            try:
+                translation = self.translate(text, strategy_name, context)
+                results.append(translation)
+            except Exception as e:
+                logger.error(f"批量翻译失败: {e}")
+                # 在错误情况下返回原文
+                results.append(text)
+                
+        return results
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        获取性能指标
+        
+        Returns:
+            指标字典
+        """
+        metrics = self.metrics.copy()
+        
+        # 添加缓存指标
+        if self.cache_manager:
+            cache_metrics = self.cache_manager.get_metrics()
+            metrics['cache'] = cache_metrics
+            
+        # 添加策略指标
+        strategies_metrics = {}
+        for name, strategy in self.strategy_registry.get_all_strategies().items():
+            strategies_metrics[name] = strategy.get_metrics()
+            
+        metrics['strategies'] = strategies_metrics
+        metrics['last_updated'] = time.time()
+        
+        return metrics
+    
+    def clear_cache(self, pattern: str = None) -> int:
+        """
+        清除缓存
+        
+        Args:
+            pattern: 匹配模式，如果为None则清除所有缓存
+            
+        Returns:
+            清除的条目数量
+        """
+        if self.cache_manager:
+            return self.cache_manager.clear(pattern)
+        return 0
+    
+    def _update_response_time(self, response_time: float) -> None:
+        """
+        更新平均响应时间
+        
+        Args:
+            response_time: 响应时间（秒）
+        """
+        current_avg = self.metrics["average_response_time"]
+        total_requests = self.metrics["successful_requests"] + self.metrics["failed_requests"]
+        
+        if total_requests == 1:
+            # 第一个请求
+            self.metrics["average_response_time"] = response_time
+        else:
+            # 使用移动平均值
+            self.metrics["average_response_time"] = current_avg * 0.9 + response_time * 0.1 

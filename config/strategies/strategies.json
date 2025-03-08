@@ -1,0 +1,66 @@
+{
+    "strategies": {
+        "openai_gpt35": {
+            "type": "openai",
+            "name": "openai_gpt35",
+            "api_key": "",
+            "model": "gpt-3.5-turbo",
+            "temperature": 0.3,
+            "max_tokens": 2000,
+            "prompt_template": "将以下文本从{source_lang}翻译成{target_lang}，保持原文的格式和风格:\n\n{text}"
+        },
+        "openai_gpt4": {
+            "type": "openai",
+            "name": "openai_gpt4",
+            "api_key": "",
+            "model": "gpt-4",
+            "temperature": 0.2,
+            "max_tokens": 4000,
+            "prompt_template": "将以下文本从{source_lang}翻译成{target_lang}，保持原文的格式、风格和专业性:\n\n{text}"
+        },
+        "anthropic_claude": {
+            "type": "anthropic",
+            "name": "anthropic_claude",
+            "api_key": "",
+            "model": "claude-3-opus-20240229",
+            "temperature": 0.3,
+            "max_tokens": 3000,
+            "prompt_template": "您是一位专业翻译，能够准确地将{source_lang}翻译成{target_lang}。请翻译以下文本，确保保留原始格式和专业术语:\n\n{text}"
+        },
+        "gemini_pro": {
+            "type": "gemini",
+            "name": "gemini_pro",
+            "api_key": "",
+            "model": "gemini-pro",
+            "temperature": 0.2,
+            "max_tokens": 2048,
+            "prompt_template": "请将下面的{source_lang}文本翻译成{target_lang}，保持原始的格式和专业术语的准确性:\n\n{text}"
+        },
+        "alibaba_qwen": {
+            "type": "alibaba",
+            "name": "alibaba_qwen",
+            "api_key": "",
+            "model": "qwen-max",
+            "temperature": 0.3,
+            "max_tokens": 2000,
+            "prompt_template": "请将以下{source_lang}文本翻译为{target_lang}，保持原文的格式和技术准确性：\n\n{text}"
+        }
+    },
+    "default_strategy": "openai_gpt35",
+    "cache": {
+        "enabled": true,
+        "type": "memory",
+        "max_size": 1000,
+        "ttl": 86400
+    },
+    "context": {
+        "preserve_patterns": [
+            "\\{.*?\\}",
+            "\\$\\w+",
+            "<.*?>",
+            "```[\\s\\S]*?```"
+        ],
+        "max_segment_length": 1500,
+        "min_segment_length": 50
+    }
+} 

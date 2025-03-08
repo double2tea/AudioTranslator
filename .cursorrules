@@ -19,7 +19,8 @@
     "tests/**/*.py",
     "*.py",
     "*.md",
-    "*.json"
+    "*.json",
+    "docs/**/*.md"
   ],
   "exclude": [
     "**/__pycache__/**",
@@ -42,15 +43,50 @@
       "tkinter": "import tkinter as tk",
       "openai": "from openai import OpenAI",
       "anthropic": "from anthropic import Anthropic",
-      "gemini": "import google.generativeai as genai"
+      "gemini": "import google.generativeai as genai",
+      "alibaba": "import dashscope",
+      "zhipu": "from zhipuai import ZhipuAI"
     }
   },
   "moduleStructure": {
     "services": {
       "core": ["BaseService", "ServiceFactory", "ServiceManagerService"],
-      "api": ["ModelService", "OpenAIService", "AnthropicService", "GeminiService"],
+      "api": [
+        "ModelService", 
+        "OpenAIService", 
+        "AnthropicService", 
+        "GeminiService", 
+        "AlibabaService", 
+        "DeepseekService", 
+        "VolcService", 
+        "ZhipuService"
+      ],
       "infrastructure": ["FileService", "ConfigService"],
-      "business": ["AudioService", "TranslatorService", "CategoryService", "ThemeService", "UCSService"]
+      "business": [
+        "AudioService", 
+        "TranslatorService", 
+        "CategoryService", 
+        "ThemeService", 
+        "UCSService",
+        "TranslationManager", 
+        "NamingService"
+      ],
+      "translation": [
+        "TranslationManager",
+        "StrategyRegistry",
+        "ModelServiceAdapter",
+        "ITranslationStrategy",
+        "ContextProcessor",
+        "CacheManager",
+        "DynamicStrategyLoader"
+      ],
+      "naming": [
+        "NamingService",
+        "RuleRegistry",
+        "INameRule",
+        "TemplateProcessor",
+        "RuleValidator"
+      ]
     }
   },
   "fileTemplates": {
@@ -61,6 +97,14 @@
     "modelService": {
       "path": "src/audio_translator/services/api/providers/{name}/{name}_service.py",
       "content": "from typing import Dict, List, Any\nfrom ...model_service import ModelService\n\nclass {ServiceName}Service(ModelService):\n    \"\"\"Service implementation for {name}\"\"\"\n\n    def __init__(self, config: Dict):\n        super().__init__(config)\n        self.name = config.get('name', '{ServiceName}')\n        self.type = '{name}'\n\n    def test_connection(self) -> Dict[str, Any]:\n        \"\"\"Test connection to the service\"\"\"\n        try:\n            # Test connection logic\n            return {'status': 'success', 'message': '连接成功'}\n        except Exception as e:\n            return {'status': 'error', 'message': str(e)}\n\n    def list_models(self) -> List[str]:\n        \"\"\"List available models\"\"\"\n        return []\n\n    def chat_completion(self, messages: List[Dict], model: str = None) -> Dict:\n        \"\"\"Generate chat completion\"\"\"\n        pass\n"
+    },
+    "translationStrategy": {
+      "path": "src/audio_translator/services/business/translation/strategies/{name}_strategy.py",
+      "content": "from typing import Dict, List, Any, Optional\nfrom ..strategies.base_strategy import ITranslationStrategy\n\nclass {ServiceName}Strategy(ITranslationStrategy):\n    \"\"\"Translation strategy for {description}\"\"\"\n\n    def __init__(self, config: Optional[Dict[str, Any]] = None):\n        self.config = config or {}\n        self.metrics = {\n            \"total_requests\": 0,\n            \"successful_requests\": 0,\n            \"failed_requests\": 0,\n            \"average_response_time\": 0\n        }\n\n    def get_name(self) -> str:\n        \"\"\"Get strategy name\"\"\"\n        return '{name}'\n\n    def get_description(self) -> str:\n        \"\"\"Get strategy description\"\"\"\n        return '{description}'\n\n    def get_provider_type(self) -> str:\n        \"\"\"Get provider type\"\"\"\n        return '{provider_type}'\n\n    def translate(self, text: str, context: Dict[str, Any] = None) -> str:\n        \"\"\"Translate text\"\"\"\n        pass\n\n    def batch_translate(self, texts: List[str], context: Dict[str, Any] = None) -> List[str]:\n        \"\"\"Batch translate texts\"\"\"\n        pass\n\n    def test_connection(self) -> Dict[str, Any]:\n        \"\"\"Test connection\"\"\"\n        pass\n\n    def get_config_schema(self) -> Dict[str, Any]:\n        \"\"\"Get configuration schema\"\"\"\n        pass\n\n    def update_config(self, config: Dict[str, Any]) -> bool:\n        \"\"\"Update configuration\"\"\"\n        pass\n\n    def get_capabilities(self) -> Dict[str, Any]:\n        \"\"\"Get capabilities\"\"\"\n        pass\n\n    def get_metrics(self) -> Dict[str, Any]:\n        \"\"\"Get metrics\"\"\"\n        return self.metrics\n"
+    },
+    "modelServiceAdapter": {
+      "path": "src/audio_translator/services/business/translation/strategies/adapters/{name}_adapter.py",
+      "content": "from typing import Dict, List, Any, Optional\nfrom ..model_service_adapter import ModelServiceAdapter\nfrom .....api.providers.{name}.{name}_service import {ServiceName}Service\n\nclass {ServiceName}Adapter(ModelServiceAdapter):\n    \"\"\"Adapter for {ServiceName}Service\"\"\"\n\n    def __init__(self, config: Dict[str, Any]):\n        # Create the model service\n        model_service = {ServiceName}Service(config)\n        # Initialize the adapter with the model service\n        super().__init__(model_service, config)\n\n    def translate(self, text: str, context: Dict[str, Any] = None) -> str:\n        \"\"\"Translate text using {ServiceName}\"\"\"\n        context = context or {}\n        # Implementation\n        pass\n"
     }
   },
   "completionRules": {
@@ -108,7 +152,9 @@
       ]
     },
     "references": [
-      "https://docs.python.org/"
+      "https://docs.python.org/",
+      "https://github.com/CherryHQ/cherry-studio",
+      
     ]
   }
 }
