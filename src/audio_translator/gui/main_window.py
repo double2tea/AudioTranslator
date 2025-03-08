@@ -30,6 +30,7 @@ from ..gui.panels.service_manager_panel import ServiceManagerPanel
 from ..gui.panels.file_manager_panel import FileManagerPanel
 from ..services.core.service_factory import ServiceFactory
 from ..utils.ui_utils import create_tooltip
+from ..gui.dialogs.translation.translation_strategy_ui import create_translation_strategy_dialog
 # 设置日志记录器
 logger = logging.getLogger(__name__)
 
@@ -348,6 +349,9 @@ class AudioTranslatorGUI:
         
         # 现在填充分类树
         self._populate_category_tree()
+        
+        # 更新翻译策略信息
+        self._update_strategy_info()
     
     def _create_toolbar(self):
         """创建工具栏"""
@@ -364,6 +368,11 @@ class AudioTranslatorGUI:
         ttk.Button(button_frame, text="刷新", command=self._refresh_current_directory).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="分类", command=self._categorize_selected_files).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="自动分类", command=self._auto_categorize_files).pack(side=tk.LEFT, padx=5)
+        
+        # 添加翻译策略按钮
+        self.strategy_button = ttk.Button(button_frame, text="翻译策略", command=self._on_open_translation_strategy_dialog)
+        self.strategy_button.pack(side=tk.LEFT, padx=5)
+        create_tooltip(self.strategy_button, "配置和管理翻译策略 (Ctrl+T)")
         
         # 添加搜索标签
         ttk.Label(toolbar_frame, text="搜索:", style="Dark.TLabel").pack(side=tk.LEFT, padx=(15, 5))
@@ -676,6 +685,20 @@ class AudioTranslatorGUI:
         )
         status_label.pack(side=tk.LEFT, fill=tk.X)
         
+        # 创建翻译策略信息标签
+        self.strategy_info = tk.StringVar()
+        self.strategy_info.set("当前翻译策略: 未设置")
+        strategy_label = ttk.Label(
+            status_bar,
+            textvariable=self.strategy_info,
+            style="StatusBar.TLabel",
+            padding=(5, 2)
+        )
+        strategy_label.pack(side=tk.RIGHT, padx=10)
+        
+        # 初始化翻译策略信息
+        self._update_strategy_info()
+        
         # 创建版本信息标签
         # 尝试从配置服务获取版本号，如果不可用则使用默认值
         app_version = "1.0.0"
@@ -716,6 +739,7 @@ class AudioTranslatorGUI:
         self.root.bind("<Control-r>", lambda e: self._refresh_current_directory())
         self.root.bind("<Control-q>", lambda e: self._on_close())
         self.root.bind("<Control-p>", lambda e: self._on_preferences())
+        self.root.bind("<Control-t>", lambda e: self._on_open_translation_strategy_dialog())
 
     def _on_window_resize(self, event):
         """处理窗口大小变化事件"""
@@ -742,6 +766,7 @@ class AudioTranslatorGUI:
         # 工具菜单
         self.tools_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.tools_menu.add_command(label="模型管理", command=self._on_model_manager)
+        self.tools_menu.add_command(label="翻译策略", command=self._on_open_translation_strategy_dialog)
         
         # 添加菜单到菜单栏
         self.menu_bar.add_cascade(label="文件", menu=self.file_menu)
@@ -1252,4 +1277,34 @@ class AudioTranslatorGUI:
             )
             
             # 递归添加子分类的子分类
-            self._add_subcategories(subcategory.cat_id, node_id, category_manager) 
+            self._add_subcategories(subcategory.cat_id, node_id, category_manager)
+
+    def _on_open_translation_strategy_dialog(self):
+        """打开翻译策略配置对话框"""
+        translation_manager = self.service_factory.get_service('translation_manager_service')
+        if translation_manager:
+            dialog = create_translation_strategy_dialog(self.root, translation_manager)
+            self.root.wait_window(dialog)
+            # 对话框关闭后更新策略信息
+            self._update_strategy_info()
+        else:
+            messagebox.showerror("错误", "无法获取翻译管理器服务")
+            
+    def _update_strategy_info(self):
+        """更新翻译策略信息"""
+        try:
+            translation_manager = self.service_factory.get_service('translation_manager_service')
+            if translation_manager and hasattr(self, 'strategy_info'):
+                default_strategy_name = translation_manager.config.get('default_strategy', '未设置')
+                if default_strategy_name != '未设置':
+                    strategy = translation_manager.get_translation_strategy(default_strategy_name)
+                    if strategy:
+                        strategy_info = f"当前翻译策略: {strategy.get_name()}"
+                        self.strategy_info.set(strategy_info)
+                        return
+                self.strategy_info.set("当前翻译策略: 未设置")
+        except Exception as e:
+            logger.error(f"更新翻译策略信息失败: {e}")
+            if hasattr(self, 'strategy_info'):
+                self.strategy_info.set("当前翻译策略: 获取失败")
+            
