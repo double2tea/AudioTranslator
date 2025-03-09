@@ -31,6 +31,7 @@ from ..gui.panels.file_manager_panel import FileManagerPanel
 from ..services.core.service_factory import ServiceFactory
 from ..utils.ui_utils import create_tooltip
 from ..gui.dialogs.translation.translation_strategy_ui import create_translation_strategy_dialog
+from ..gui.dialogs.naming.naming_rule_ui import create_naming_rule_dialog
 # 设置日志记录器
 logger = logging.getLogger(__name__)
 
@@ -373,6 +374,11 @@ class AudioTranslatorGUI:
         self.strategy_button = ttk.Button(button_frame, text="翻译策略", command=self._on_open_translation_strategy_dialog)
         self.strategy_button.pack(side=tk.LEFT, padx=5)
         create_tooltip(self.strategy_button, "配置和管理翻译策略 (Ctrl+T)")
+        
+        # 添加命名规则按钮
+        self.naming_rule_button = ttk.Button(button_frame, text="命名规则", command=self._on_open_naming_rule_dialog)
+        self.naming_rule_button.pack(side=tk.LEFT, padx=5)
+        create_tooltip(self.naming_rule_button, "配置和管理命名规则 (Ctrl+N)")
         
         # 添加搜索标签
         ttk.Label(toolbar_frame, text="搜索:", style="Dark.TLabel").pack(side=tk.LEFT, padx=(15, 5))
@@ -740,6 +746,7 @@ class AudioTranslatorGUI:
         self.root.bind("<Control-q>", lambda e: self._on_close())
         self.root.bind("<Control-p>", lambda e: self._on_preferences())
         self.root.bind("<Control-t>", lambda e: self._on_open_translation_strategy_dialog())
+        self.root.bind("<Control-n>", lambda e: self._on_open_naming_rule_dialog())
 
     def _on_window_resize(self, event):
         """处理窗口大小变化事件"""
@@ -767,8 +774,9 @@ class AudioTranslatorGUI:
         self.tools_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.tools_menu.add_command(label="模型管理", command=self._on_model_manager)
         self.tools_menu.add_command(label="翻译策略", command=self._on_open_translation_strategy_dialog)
+        self.tools_menu.add_command(label="命名规则", command=self._on_open_naming_rule_dialog)
         
-        # 添加菜单到菜单栏
+        # 将菜单添加到菜单栏
         self.menu_bar.add_cascade(label="文件", menu=self.file_menu)
         self.menu_bar.add_cascade(label="编辑", menu=self.edit_menu)
         self.menu_bar.add_cascade(label="工具", menu=self.tools_menu)
@@ -1307,4 +1315,14 @@ class AudioTranslatorGUI:
             logger.error(f"更新翻译策略信息失败: {e}")
             if hasattr(self, 'strategy_info'):
                 self.strategy_info.set("当前翻译策略: 获取失败")
+    
+    def _on_open_naming_rule_dialog(self):
+        """打开命名规则配置对话框"""
+        naming_service = self.service_factory.get_service('naming_service')
+        if naming_service:
+            dialog = create_naming_rule_dialog(self.root, naming_service)
+            self.root.wait_window(dialog)
+            # 对话框关闭后可以添加任何需要的更新操作
+        else:
+            messagebox.showerror("错误", "无法获取命名服务")
             
