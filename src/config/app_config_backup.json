@@ -61,5 +61,7 @@
       "temperature": 0.3,
       "current_model": "glm-4"
     }
-  }
+  },
+  "TRANSLATION_SERVICE": "zhipu",
+  "UI_THEME": "dark"
 }

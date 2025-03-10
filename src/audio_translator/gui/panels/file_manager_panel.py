@@ -112,12 +112,11 @@ class FileManagerPanel(SimplePanel):
         
     def _create_toolbar(self) -> None:
         """创建工具栏"""
-        # 工具栏框架
         self.toolbar = ttk.Frame(self)
         self.toolbar.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         
         # 刷新按钮
-        self.refresh_btn = ttk.Button(self.toolbar, text="刷新", width=8)
+        self.refresh_btn = ttk.Button(self.toolbar, text="刷新", width=8, command=self._refresh_files)
         self.refresh_btn.pack(side=tk.LEFT, padx=2)
         create_tooltip(self.refresh_btn, "刷新文件列表")
         
@@ -137,25 +136,17 @@ class FileManagerPanel(SimplePanel):
         create_tooltip(self.deselect_all_btn, "取消所有选择")
         
         # 分隔符
-        ttk.Separator(self.toolbar, orient="vertical").pack(side=tk.LEFT, padx=5, fill="y")
+        ttk.Separator(self.toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=5, fill=tk.Y)
         
-        # 编辑翻译按钮
-        self.edit_btn = ttk.Button(self.toolbar, text="编辑翻译", width=8, state="disabled", command=self._edit_translation)
-        self.edit_btn.pack(side=tk.LEFT, padx=2)
-        create_tooltip(self.edit_btn, "编辑已选文件的翻译")
+        # 分类按钮
+        self.categorize_btn = ttk.Button(self.toolbar, text="分类文件", width=8, command=self._on_categorize_files)
+        self.categorize_btn.pack(side=tk.LEFT, padx=2)
+        create_tooltip(self.categorize_btn, "将选中的文件分类")
         
-        # 翻译按钮
-        self.translate_btn = ttk.Button(self.toolbar, text="翻译", width=8, state="disabled", command=self._translate_selected_files)
-        self.translate_btn.pack(side=tk.LEFT, padx=2)
-        create_tooltip(self.translate_btn, "翻译已选中的文件")
-        
-        # 分隔符
-        ttk.Separator(self.toolbar, orient="vertical").pack(side=tk.LEFT, padx=5, fill="y")
-        
-        # 列显示设置按钮
-        self.columns_btn = ttk.Button(self.toolbar, text="列显示", width=8, command=self._show_column_settings)
-        self.columns_btn.pack(side=tk.LEFT, padx=2)
-        create_tooltip(self.columns_btn, "设置显示的列")
+        # 自动分类按钮
+        self.auto_categorize_btn = ttk.Button(self.toolbar, text="自动分类", width=8, command=self._on_auto_categorize)
+        self.auto_categorize_btn.pack(side=tk.LEFT, padx=2)
+        create_tooltip(self.auto_categorize_btn, "使用AI自动分类选中的文件")
         
         # 右侧区域 - 搜索和过滤
         self.search_frame = ttk.Frame(self.toolbar)
@@ -1357,4 +1348,55 @@ class FileManagerPanel(SimplePanel):
     def _on_edit_categories(self) -> None:
         """处理点击编辑分类按钮的事件"""
         # 这个方法将在后续阶段实现
-        pass 
+        pass
+
+    def _on_categorize_files(self) -> None:
+        """处理点击分类文件按钮的事件"""
+        # 获取主应用实例
+        main_app = self._get_main_app()
+        if not main_app:
+            messagebox.showerror("错误", "无法获取主应用实例")
+            return
+        
+        # 确保有选中的文件
+        selected_files = self.get_selected_files()
+        if not selected_files:
+            messagebox.showinfo("提示", "请先选择要分类的文件")
+            return
+            
+        # 调用主应用中的分类方法
+        if hasattr(main_app, '_categorize_selected_files'):
+            main_app._categorize_selected_files()
+        else:
+            messagebox.showerror("错误", "分类功能不可用")
+    
+    def _on_auto_categorize(self) -> None:
+        """处理点击自动分类按钮的事件"""
+        # 获取主应用实例
+        main_app = self._get_main_app()
+        if not main_app:
+            messagebox.showerror("错误", "无法获取主应用实例")
+            return
+        
+        # 确保有选中的文件
+        selected_files = self.get_selected_files()
+        if not selected_files:
+            messagebox.showinfo("提示", "请先选择要自动分类的文件")
+            return
+            
+        # 调用主应用中的自动分类方法
+        if hasattr(main_app, '_auto_categorize_files'):
+            main_app._auto_categorize_files()
+        else:
+            messagebox.showerror("错误", "自动分类功能不可用")
+    
+    def _get_main_app(self):
+        """获取主应用实例"""
+        # 遍历父级窗口，找到主应用实例
+        parent = self.winfo_toplevel()
+        
+        # 寻找AudioTranslatorGUI实例
+        if hasattr(parent, 'category_manager'):
+            return parent
+        
+        return None 

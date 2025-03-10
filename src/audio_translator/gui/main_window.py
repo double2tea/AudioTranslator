@@ -553,18 +553,21 @@ class AudioTranslatorGUI:
         self.file_tab = ttk.Frame(self.notebook, style="Dark.TFrame")
         self.notebook.add(self.file_tab, text="文件管理")
         
-        # 配置文件标签页
-        self.file_tab.columnconfigure(0, weight=2)  # 文件区域占更多空间
-        self.file_tab.columnconfigure(1, weight=1)  # 分类区域占更少空间
+        # 配置文件标签页 - 现在文件区域占据整个选项卡
+        self.file_tab.columnconfigure(0, weight=1)  # 文件区域占满整个选项卡宽度
         self.file_tab.rowconfigure(0, weight=1)
         
         # 创建文件相关组件
         self.file_area = self._create_file_area(self.file_tab)
-        self.file_area.grid(row=0, column=0, sticky='nsew', padx=(0, 5))
+        self.file_area.grid(row=0, column=0, sticky='nsew')
         
-        # 创建分类相关组件
-        self.category_area = self._create_category_area(self.file_tab)
-        self.category_area.grid(row=0, column=1, sticky='nsew')
+        # 创建新的分类管理标签页
+        self.category_tab = ttk.Frame(self.notebook, style="Dark.TFrame")
+        self.notebook.add(self.category_tab, text="分类管理")
+        
+        # 创建分类相关组件并添加到新的分类管理标签页
+        self.category_area = self._create_category_area(self.category_tab)
+        self.category_area.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # 创建服务管理标签页
         self.service_tab = ttk.Frame(self.notebook, style="Dark.TFrame")
@@ -712,16 +715,14 @@ class AudioTranslatorGUI:
         # 创建分类区域框架
         category_area_frame = ttk.Frame(parent)
         
-        # 创建分类区域标题
-        title_frame = ttk.Frame(category_area_frame)
-        title_frame.pack(fill=tk.X, pady=(0, 5))
+        # 创建顶部工具栏框架
+        toolbar_frame = ttk.Frame(category_area_frame)
+        toolbar_frame.pack(fill=tk.X, pady=(0, 10))
         
-        title_label = ttk.Label(title_frame, text="分类管理", font=("Helvetica", 10, "bold"))
-        title_label.pack(side=tk.LEFT, padx=5)
-        
-        # 创建操作按钮
-        actions_frame = ttk.Frame(category_area_frame)
-        actions_frame.pack(fill=tk.X, pady=5)
+        # 分类管理标题 - 独立选项卡不需要标题，因为选项卡已经有标题
+        # 创建操作按钮区域
+        actions_frame = ttk.Frame(toolbar_frame)
+        actions_frame.pack(fill=tk.X)
         
         # 添加分类按钮
         self.add_category_btn = ttk.Button(actions_frame, text="添加分类", width=12, 
@@ -735,6 +736,16 @@ class AudioTranslatorGUI:
         self.del_category_btn.pack(side=tk.LEFT, padx=5)
         create_tooltip(self.del_category_btn, "删除选定的分类")
         
+        # 搜索框 - 新增功能
+        search_frame = ttk.Frame(actions_frame)
+        search_frame.pack(side=tk.RIGHT, padx=5)
+        
+        ttk.Label(search_frame, text="搜索:").pack(side=tk.LEFT, padx=(0, 5))
+        self.category_search_var = tk.StringVar()
+        self.category_search_entry = ttk.Entry(search_frame, textvariable=self.category_search_var, width=15)
+        self.category_search_entry.pack(side=tk.LEFT)
+        self.category_search_var.trace_add("write", self._on_category_search_change)
+        
         # 分类树区域
         tree_frame = ttk.Frame(category_area_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -745,14 +756,14 @@ class AudioTranslatorGUI:
         
         # 创建分类树
         self.category_tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set, 
-                                          selectmode="browse", height=15)
+                                          selectmode="browse", height=25)  # 增加高度
         self.category_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         tree_scroll.config(command=self.category_tree.yview)
         
         # 配置分类树
         self.category_tree["columns"] = ("count",)
-        self.category_tree.column("#0", width=180, minwidth=150)
-        self.category_tree.column("count", width=50, minwidth=50, anchor=tk.CENTER)
+        self.category_tree.column("#0", width=250, minwidth=200)  # 增加宽度
+        self.category_tree.column("count", width=80, minwidth=60, anchor=tk.CENTER)
         
         self.category_tree.heading("#0", text="分类名称", anchor=tk.W)
         self.category_tree.heading("count", text="数量", anchor=tk.CENTER)
@@ -772,49 +783,12 @@ class AudioTranslatorGUI:
         self.category_tree.bind("<Double-1>", self._on_category_double_click)
         self.category_tree.bind("<Button-3>", self._show_category_context_menu)
         
-        # 创建分类信息区域
-        info_frame = ttk.LabelFrame(category_area_frame, text="分类信息")
-        info_frame.pack(fill=tk.X, pady=5, padx=5)
+        # 状态栏 - 显示分类总数
+        status_frame = ttk.Frame(category_area_frame)
+        status_frame.pack(fill=tk.X, pady=(5, 0))
         
-        # 分类信息表格
-        info_grid = ttk.Frame(info_frame)
-        info_grid.pack(fill=tk.X, padx=5, pady=5)
-        
-        # 分类路径
-        ttk.Label(info_grid, text="路径:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
-        self.category_path_var = tk.StringVar()
-        ttk.Label(info_grid, textvariable=self.category_path_var).grid(
-            row=0, column=1, sticky=tk.W, padx=5, pady=2)
-        
-        # 分类数量
-        ttk.Label(info_grid, text="文件数:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
-        self.category_count_var = tk.StringVar()
-        ttk.Label(info_grid, textvariable=self.category_count_var).grid(
-            row=1, column=1, sticky=tk.W, padx=5, pady=2)
-        
-        # 分类类型
-        ttk.Label(info_grid, text="类型:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
-        self.category_type_var = tk.StringVar()
-        ttk.Label(info_grid, textvariable=self.category_type_var).grid(
-            row=2, column=1, sticky=tk.W, padx=5, pady=2)
-        
-        # 操作按钮区域
-        button_frame = ttk.Frame(category_area_frame)
-        button_frame.pack(fill=tk.X, pady=5)
-        
-        # 分类按钮
-        self.categorize_btn = ttk.Button(button_frame, text="分类文件", width=14, 
-                                         command=self._categorize_selected_files)
-        self.categorize_btn.pack(side=tk.LEFT, padx=5)
-        create_tooltip(self.categorize_btn, "将选中的文件分配到所选分类")
-        
-        # 自动分类按钮
-        self.auto_categorize_btn = ttk.Button(button_frame, text="自动分类", width=14,
-                                             command=self._auto_categorize_files)
-        self.auto_categorize_btn.pack(side=tk.LEFT, padx=5)
-        create_tooltip(self.auto_categorize_btn, "使用AI自动分类选中的文件")
-        
-        # 不再在这里调用 _populate_category_tree
+        self.category_status_label = ttk.Label(status_frame, text="加载中...", anchor=tk.W)
+        self.category_status_label.pack(side=tk.LEFT, padx=5)
         
         return category_area_frame
     
@@ -1119,18 +1093,35 @@ class AudioTranslatorGUI:
         messagebox.showinfo("首选项", "首选项功能正在开发中...")
 
     def _on_tab_changed(self, event=None):
-        """处理标签页切换事件"""
-        # 记录标签页切换
-        current_tab = self.notebook.select()
-        tab_id = self.notebook.index(current_tab)
-        tab_name = self.notebook.tab(tab_id, "text")
-        logger.info(f"选项卡切换: {tab_name}")
+        """
+        处理选项卡切换事件
         
-        # 如果切换到服务管理标签页，更新服务列表
-        if tab_name == "服务管理" and hasattr(self, 'service_manager_panel'):
-            # 仅当面板存在时刷新
-            if hasattr(self.service_manager_panel, '_refresh_services'):
-                self.service_manager_panel._refresh_services()
+        当用户在不同选项卡之间切换时，根据当前选中的选项卡更新UI状态
+        """
+        try:
+            current_tab = self.notebook.select()
+            tab_id = self.notebook.index(current_tab)
+            
+            logger.debug(f"切换到选项卡 {tab_id}")
+            
+            # 根据选中的选项卡ID执行相应操作
+            if tab_id == 0:  # 文件管理选项卡
+                # 刷新文件列表
+                if hasattr(self, 'file_manager_panel') and hasattr(self.file_manager_panel, '_refresh_files'):
+                    self.file_manager_panel._refresh_files()
+                    
+            elif tab_id == 1:  # 分类管理选项卡
+                # 刷新分类树
+                self._populate_category_tree()
+                
+            elif tab_id == 2:  # 服务管理选项卡
+                # 刷新服务列表
+                if hasattr(self, 'service_manager_panel') and hasattr(self.service_manager_panel, '_refresh_services'):
+                    self.service_manager_panel._refresh_services()
+        except Exception as e:
+            logger.error(f"处理选项卡切换事件出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _on_category_selected(self, event):
         """
@@ -1149,9 +1140,8 @@ class AudioTranslatorGUI:
         
         # 如果选择的是根节点，清空信息显示
         if category_id == "root":
-            self.category_path_var.set("")
-            self.category_count_var.set("")
-            self.category_type_var.set("")
+            self.category_search_var.set("")
+            self.category_status_label.config(text="加载中...")
             return
         
         # 获取分类信息
@@ -1166,19 +1156,13 @@ class AudioTranslatorGUI:
         else:
             path = category_name
         
-        self.category_path_var.set(path)
+        self.category_search_var.set(path)
         
         # 显示该分类下的文件数量
         if category_info and len(category_info) > 0:
-            self.category_count_var.set(category_info[0])
+            self.category_status_label.config(text=f"共 {category_info[0]} 个文件")
         else:
-            self.category_count_var.set("0")
-        
-        # 显示分类类型
-        if parent_id:
-            self.category_type_var.set("子分类")
-        else:
-            self.category_type_var.set("主分类")
+            self.category_status_label.config(text="没有文件")
 
     def _on_category_double_click(self, event):
         """
@@ -1533,6 +1517,7 @@ class AudioTranslatorGUI:
             categories = self.category_manager.get_all_categories()
             if not categories:
                 logger.warning("未找到任何分类")
+                self.category_status_label.config(text="未找到任何分类")
                 return
             
             # 添加根分类
@@ -1585,15 +1570,9 @@ class AudioTranslatorGUI:
                     logger.error(f"添加根分类节点失败: {e}, 分类ID: {category.cat_id if hasattr(category, 'cat_id') else '未知'}")
                     continue
                 
-            # 更新标题显示分类数量
-            title_text = f"分类管理 (共{len(categories)}个分类)"
-            # 直接更新分类区域的标题
-            for widget in self.category_area.winfo_children():
-                if isinstance(widget, ttk.LabelFrame) or isinstance(widget, ttk.Frame):
-                    for child in widget.winfo_children():
-                        if isinstance(child, ttk.Label) and "分类管理" in child.cget("text"):
-                            child.config(text=title_text)
-                            break
+            # 更新状态栏显示分类总数
+            self.category_status_label.config(text=f"共 {len(categories)} 个分类")
+            
         except Exception as e:
             logger.error(f"加载分类树时发生错误: {e}")
             import traceback
@@ -1723,4 +1702,50 @@ class AudioTranslatorGUI:
         services_status_str = ", ".join([f"{s}: {'✓' if status else '✗'}" 
                                         for s, status in self.services_status.items()])
         logger.info(f"服务状态: {services_status_str}")
+            
+    def _on_category_search_change(self, *args):
+        """处理分类搜索输入变化"""
+        search_text = self.category_search_var.get().strip().lower()
+        
+        # 如果搜索框为空，重新加载完整的分类树
+        if not search_text:
+            self._populate_category_tree()
+            return
+            
+        # 清空当前树
+        for item in self.category_tree.get_children():
+            self.category_tree.delete(item)
+            
+        # 获取所有分类
+        try:
+            categories = self.category_manager.get_all_categories()
+            if not categories:
+                return
+                
+            # 筛选匹配的分类
+            matched_categories = {}
+            for cat_id, category in categories.items():
+                category_name = category.name_zh.lower() if hasattr(category, 'name_zh') else cat_id.lower()
+                
+                if search_text in category_name:
+                    matched_categories[cat_id] = category
+                    
+            # 插入匹配的分类
+            for i, (cat_id, category) in enumerate(matched_categories.items()):
+                # 确定行标签（奇数行或偶数行）
+                row_tags = ('odd',) if i % 2 == 0 else ('even',)
+                
+                # 创建分类节点
+                self.category_tree.insert(
+                    "", "end", 
+                    text=category.name_zh if hasattr(category, 'name_zh') else cat_id,
+                    values=(category.count if hasattr(category, 'count') else 0,),
+                    tags=row_tags
+                )
+                
+            # 更新状态栏
+            self.category_status_label.config(text=f"搜索结果: {len(matched_categories)} 个分类")
+            
+        except Exception as e:
+            logger.error(f"分类搜索时发生错误: {e}")
             

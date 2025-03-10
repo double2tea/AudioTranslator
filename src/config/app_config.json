@@ -62,5 +62,30 @@
       "current_model": "glm-4"
     }
   },
-  "TRANSLATION_SERVICE": "zhipu"
+  "TRANSLATION_SERVICE": "zhipu",
+  "UI_THEME": "dark",
+  "COLORS": {
+    "dark": {
+      "bg_dark": "#212121",
+      "bg_light": "#333333",
+      "fg": "#FFFFFF",
+      "fg_dim": "#BBBBBB",
+      "accent": "#2196F3",
+      "border": "#555555",
+      "hover": "#484848",
+      "selected": "#1976D2",
+      "disabled": "#7D7D7D"
+    },
+    "light": {
+      "bg_dark": "#F5F5F5",
+      "bg_light": "#FFFFFF",
+      "fg": "#212121",
+      "fg_dim": "#444444",
+      "accent": "#1976D2",
+      "border": "#BBBBBB",
+      "hover": "#E0E0E0",
+      "selected": "#BBDEFB",
+      "disabled": "#9E9E9E"
+    }
+  }
 }
