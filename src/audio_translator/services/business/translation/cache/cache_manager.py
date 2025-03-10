@@ -51,15 +51,43 @@ class CacheManager:
             'hit_rate': 0.0,
             'size': 0,
             'evictions': 0,
-            'last_cleanup': 0
+            'last_cleanup': time.time()
         }
         
         self.memory_cache = None
         self.redis_client = None
         
         # 初始化缓存
-        if self.enabled:
-            self._initialize_cache()
+        self._initialize_cache()
+    
+    def initialize(self) -> bool:
+        """
+        初始化缓存管理器
+        
+        Returns:
+            初始化是否成功
+        """
+        try:
+            # 确保缓存已初始化
+            if self.mode == 'memory' and self.memory_cache is None:
+                self.memory_cache = OrderedDict()
+                
+                # 尝试从文件加载缓存
+                persist_path = self.config.get('persist_path')
+                if persist_path:
+                    self._load_from_file(persist_path)
+            
+            elif self.mode == 'redis' and self.redis_client is None:
+                self._initialize_redis()
+                
+            logger.info(f"缓存管理器初始化成功，模式: {self.mode}")
+            return True
+        except Exception as e:
+            logger.error(f"初始化缓存管理器失败: {e}")
+            # 出错时回退到内存缓存
+            self.mode = 'memory'
+            self.memory_cache = OrderedDict()
+            return False
     
     def _initialize_cache(self) -> None:
         """初始化缓存存储"""
@@ -389,6 +417,17 @@ class CacheManager:
                 self.metrics['size'] = self.redis_client.dbsize()
             except Exception:
                 pass
+        
+        # 确保指标完整
+        # 'requests' 和 'total_requests' 确保至少有一个存在
+        if 'requests' not in self.metrics:
+            self.metrics['requests'] = self.metrics.get('total_requests', 0)
+        if 'total_requests' not in self.metrics:
+            self.metrics['total_requests'] = self.metrics.get('requests', 0)
+            
+        # 确保计算命中率
+        if 'hit_rate' not in self.metrics and self.metrics.get('requests', 0) > 0:
+            self.metrics['hit_rate'] = self.metrics.get('hits', 0) / self.metrics.get('requests', 1)
                 
         return self.metrics
     

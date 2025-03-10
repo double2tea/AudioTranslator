@@ -24,16 +24,17 @@ class CategorySelectionDialog:
     提供分类选择界面，包含搜索、分类树和高级选项。
     """
     
-    # 深色主题配色
+    # 深色主题默认配色（将被主题服务替换）
     COLORS = {
-        'bg_dark': '#1E1E1E',      # 主背景色
-        'bg_light': '#2D2D2D',     # 次要背景
+        'bg_dark': '#212121',      # 主背景色
+        'bg_light': '#333333',     # 次要背景
         'fg': '#FFFFFF',           # 主文本色
-        'fg_dim': '#AAAAAA',       # 次要文本
-        'accent': '#007ACC',       # 强调色
-        'border': '#3D3D3D',       # 边框色
-        'hover': '#3D3D3D',        # 悬停色
-        'selected': '#094771'      # 选中色
+        'fg_dim': '#BBBBBB',       # 次要文本
+        'accent': '#2196F3',       # 强调色
+        'border': '#555555',       # 边框色
+        'hover': '#484848',        # 悬停色
+        'selected': '#1976D2',     # 选中色
+        'disabled': '#7D7D7D'      # 禁用色
     }
     
     def __init__(self, parent, categories: List[Dict[str, Any]], 
@@ -43,7 +44,7 @@ class CategorySelectionDialog:
         
         Args:
             parent: 父窗口
-            categories: 分类列表，UI格式
+            categories: 分类数据列表
             files: 要分类的文件列表
             initial_selection: 初始选中的分类ID
         """
@@ -51,40 +52,48 @@ class CategorySelectionDialog:
         self.categories = categories
         self.files = files
         self.initial_selection = initial_selection
-        
-        # 初始化结果
         self.result = None
         
         # 创建对话框
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("选择分类")
-        self.dialog.geometry("600x500")
-        self.dialog.minsize(500, 400)
-        self.dialog.configure(bg=self.COLORS['bg_dark'])
+        self.dialog.geometry("800x600")
+        self.dialog.minsize(600, 400)
         
-        # 设置模态对话框
+        # 设置模态
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
-        # 设置图标
+        # 尝试获取主题服务
         try:
-            self.dialog.iconbitmap('assets/icon.ico')
-        except:
-            pass
-            
-        # 设置关闭事件
-        self.dialog.protocol("WM_DELETE_WINDOW", self.on_cancel)
+            # 尝试获取主题服务
+            from ...services.core.service_factory import ServiceFactory
+            service_factory = ServiceFactory.get_instance()
+            if service_factory:
+                theme_service = service_factory.get_service('theme_service')
+                if theme_service:
+                    # 获取当前主题颜色
+                    self.COLORS = theme_service.get_theme_colors()
+                    # 应用主题到对话框
+                    theme_service.setup_dialog_theme(self.dialog)
+        except Exception as e:
+            logger.warning(f"应用主题到对话框失败: {e}")
         
-        # 创建UI
+        # 变量初始化
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", self.on_search_change)
+        self.selected_category_var = tk.StringVar()
+        self.use_subcategory_var = tk.BooleanVar(value=True)
+        
+        # 创建UI元素
         self.create_widgets()
         
         # 填充分类树
         self.populate_category_tree()
         
-        # 如果有指定的初始选择，则选中它
-        if self.initial_selection:
-            self.select_initial_category()
-            
+        # 选择初始分类
+        self.select_initial_category()
+        
     def create_widgets(self):
         """创建对话框UI组件"""
         # 主框架
@@ -107,7 +116,6 @@ class CategorySelectionDialog:
         search_label = ttk.Label(search_frame, text="搜索:")
         search_label.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
@@ -198,7 +206,6 @@ class CategorySelectionDialog:
         advanced_frame.pack(fill=tk.X, pady=(0, 10))
         
         # 使用子分类选项
-        self.use_subcategory_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             advanced_frame, 
             text="创建子分类文件夹",

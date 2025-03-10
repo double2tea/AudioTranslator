@@ -33,6 +33,16 @@ class ModelConfigDialog(tk.Toplevel):
         self.result = None
         self.logger = logging.getLogger(__name__)
         
+        # 尝试应用主题
+        try:
+            # 尝试获取主题服务
+            theme_service = service_manager.get_service('theme_service')
+            if theme_service:
+                # 应用主题到对话框
+                theme_service.setup_dialog_theme(self)
+        except Exception as e:
+            self.logger.warning(f"应用主题到对话框失败: {e}")
+        
         self._create_ui()
         self._center_window()
         self.protocol("WM_DELETE_WINDOW", self._on_close)

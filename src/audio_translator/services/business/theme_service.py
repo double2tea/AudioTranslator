@@ -34,45 +34,52 @@ class ThemeService(BaseService):
     DEFAULT_COLORS = {
         # 深色主题
         'dark': {
-            'bg_dark': '#1E1E1E',      # 主背景色
-            'bg_light': '#2D2D2D',     # 次要背景
-            'fg': '#FFFFFF',           # 主文本色
-            'fg_dim': '#AAAAAA',       # 次要文本
-            'accent': '#007ACC',       # 强调色
-            'border': '#3D3D3D',       # 边框色
-            'hover': '#3D3D3D',        # 悬停色
-            'selected': '#094771',     # 选中色
-            'disabled': '#6D6D6D'      # 禁用色
+            'bg_dark': '#212121',      # 主背景色 - 稍微变亮
+            'bg_light': '#333333',     # 次要背景 - 增加对比度
+            'fg': '#FFFFFF',           # 主文本色 - 保持白色
+            'fg_dim': '#BBBBBB',       # 次要文本 - 增亮一点
+            'accent': '#2196F3',       # 强调色 - 更亮的蓝色
+            'border': '#555555',       # 边框色 - 更明显
+            'hover': '#484848',        # 悬停色 - 增加对比度
+            'selected': '#1976D2',     # 选中色 - 更亮的蓝色
+            'disabled': '#7D7D7D'      # 禁用色 - 更清晰可见
         },
         # 浅色主题
         'light': {
             'bg_dark': '#F5F5F5',      # 主背景色
             'bg_light': '#FFFFFF',     # 次要背景
-            'fg': '#000000',           # 主文本色
-            'fg_dim': '#555555',       # 次要文本
-            'accent': '#0078D7',       # 强调色
-            'border': '#CCCCCC',       # 边框色
-            'hover': '#E5E5E5',        # 悬停色
-            'selected': '#CCE4F7',     # 选中色
-            'disabled': '#AAAAAA'      # 禁用色
+            'fg': '#212121',           # 主文本色 - 更深的黑色
+            'fg_dim': '#444444',       # 次要文本 - 更深色提高可读性
+            'accent': '#1976D2',       # 强调色 - 更深的蓝色
+            'border': '#BBBBBB',       # 边框色 - 更明显
+            'hover': '#E0E0E0',        # 悬停色
+            'selected': '#BBDEFB',     # 选中色 - 更明显的蓝色
+            'disabled': '#9E9E9E'      # 禁用色 - 更清晰可见
         }
     }
     
-    def __init__(self, config_service: ConfigService = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         初始化主题服务
         
         Args:
-            config_service: 配置服务实例，如果为None则通过服务工厂获取
+            config: 服务配置
         """
-        super().__init__("theme_service")
+        super().__init__("theme_service", config)
         
-        self.config_service = config_service
+        # 依赖服务
+        self.config_service = None
+        self.service_factory = None  # 将由ServiceFactory设置
         
-        # 初始化属性
-        self.current_theme = "dark"  # 默认使用深色主题
-        self.themes = self.DEFAULT_COLORS.copy()
-        self.theme_listeners: List[Callable[[str, Dict[str, str]], None]] = []
+        # 当前主题和主题配置
+        self.current_theme = 'system'  # 默认使用系统主题
+        self.themes = {}
+        
+        # 注册默认主题
+        self.themes.update(self.DEFAULT_COLORS)
+        
+        # 主题变更监听器
+        self.theme_listeners = []
     
     def initialize(self) -> bool:
         """

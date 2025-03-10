@@ -4,7 +4,8 @@ import json
 import logging
 from typing import Dict, Any, List, Optional, Callable
 
-from audio_translator.services.business.naming.naming_service import NamingService
+# 修复导入路径，改为相对导入
+from ....services.business.naming.naming_service import NamingService
 
 # 设置日志记录器
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ class NamingRuleUI:
         初始化命名规则UI
         
         Args:
-            root: Tkinter窗口
+            root: Tkinter顶层窗口
             naming_service: 命名服务实例
         """
         self.root = root
@@ -26,9 +27,36 @@ class NamingRuleUI:
         self.current_rule = None
         self.callbacks = {}  # 回调函数字典
         
+        # 获取主题服务
+        self.theme_service = None
+        self.colors = {}
+        
+        try:
+            service_factory = naming_service.service_factory
+            if service_factory:
+                self.theme_service = service_factory.get_service('theme_service')
+                if self.theme_service:
+                    # 获取当前主题颜色
+                    self.colors = self.theme_service.get_theme_colors()
+                    # 为根窗口设置背景色
+                    if isinstance(root, tk.Toplevel):
+                        root.configure(bg=self.colors.get('bg_dark', '#212121'))
+        except Exception as e:
+            logger.warning(f"获取主题服务失败: {e}")
+            # 使用默认暗色主题
+            self.colors = {
+                'bg_dark': '#212121',
+                'bg_light': '#333333',
+                'fg': '#FFFFFF',
+                'accent': '#2196F3',
+                'border': '#555555',
+                'hover': '#484848',
+                'selected': '#1976D2',
+            }
+        
         # 创建主框架
-        self.main_frame = ttk.Frame(root, padding="10")
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        self.main_frame = ttk.Frame(root)
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # 创建UI组件
         self._create_rule_selection_section()
@@ -389,6 +417,18 @@ def create_naming_rule_dialog(parent, naming_service: NamingService) -> tk.Tople
     # 设置为模态对话框
     dialog.transient(parent)
     dialog.grab_set()
+    
+    # 应用主题
+    try:
+        # 尝试获取主题服务
+        service_factory = naming_service.service_factory
+        if service_factory:
+            theme_service = service_factory.get_service('theme_service')
+            if theme_service:
+                # 应用主题到对话框
+                theme_service.setup_dialog_theme(dialog)
+    except Exception as e:
+        logger.warning(f"应用主题到对话框失败: {e}")
     
     ui = NamingRuleUI(dialog, naming_service)
     ui.show()

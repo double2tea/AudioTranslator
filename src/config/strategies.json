@@ -44,9 +44,18 @@
             "temperature": 0.3,
             "max_tokens": 2000,
             "prompt_template": "请将以下{source_lang}文本翻译为{target_lang}，保持原文的格式和技术准确性：\n\n{text}"
+        },
+        "zhipu_glm4": {
+            "type": "zhipu",
+            "name": "zhipu_glm4",
+            "api_key": "d6892e20468c4c18b30d372083977be5.e8vaZHp9Hng47zkH",
+            "model": "glm-4",
+            "temperature": 0.3,
+            "max_tokens": 2000,
+            "prompt_template": "你是一个专业的翻译助手。请将以下{source_lang}文本翻译为{target_lang}，保持原文的精确含义、格式和技术准确性：\n\n{text}"
         }
     },
-    "default_strategy": "openai_gpt35",
+    "default_strategy": "zhipu_glm4",
     "cache": {
         "enabled": true,
         "type": "memory",

@@ -50,9 +50,18 @@ class FileService(BaseService):
             初始化是否成功
         """
         try:
-            # 获取应用数据目录，默认为用户目录下的 .audio_translator
-            app_data_dir = self.config.get("app_data_dir", 
-                                         os.path.join(os.path.expanduser("~"), ".audio_translator"))
+            # 获取应用数据目录，优先使用配置中的 app.data_dir，其次使用 app_data_dir，最后使用默认路径
+            app_data_dir = None
+            
+            # 优先检查 app.data_dir (测试环境使用)
+            if self.config and self.config.get('app') and 'data_dir' in self.config['app']:
+                app_data_dir = self.config['app']['data_dir']
+            # 其次检查直接的 app_data_dir 配置
+            elif self.config and 'app_data_dir' in self.config:
+                app_data_dir = self.config['app_data_dir']
+            # 最后使用默认位置
+            else:
+                app_data_dir = os.path.join(os.path.expanduser("~"), ".audio_translator")
             
             # 创建应用数据目录（如果不存在）
             os.makedirs(app_data_dir, exist_ok=True)
@@ -63,6 +72,9 @@ class FileService(BaseService):
             
             os.makedirs(self.temp_directory, exist_ok=True)
             os.makedirs(self.cache_directory, exist_ok=True)
+            
+            # 保存应用数据目录
+            self.app_data_dir = app_data_dir
             
             self.is_initialized = True
             logger.info(f"文件服务初始化成功，应用数据目录: {app_data_dir}")
@@ -300,27 +312,39 @@ class FileService(BaseService):
     
     def _clear_directory(self, directory: str) -> bool:
         """
-        清空目录内容
+        清空目录
         
         Args:
-            directory: 目录路径
+            directory: 要清空的目录路径
             
         Returns:
             清空是否成功
         """
         try:
-            if os.path.exists(directory) and os.path.isdir(directory):
-                for item in os.listdir(directory):
-                    item_path = os.path.join(directory, item)
-                    if os.path.isfile(item_path):
-                        os.unlink(item_path)
-                    elif os.path.isdir(item_path):
-                        shutil.rmtree(item_path)
+            if not os.path.exists(directory):
                 return True
-            return False
+                
+            for item in os.listdir(directory):
+                item_path = os.path.join(directory, item)
+                if os.path.isfile(item_path):
+                    os.unlink(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                    
+            return True
+            
         except Exception as e:
-            logger.error(f"清空目录失败: {str(e)}")
+            logger.error(f"清空目录失败: {directory}, 错误: {str(e)}")
             return False
+    
+    def get_data_dir(self) -> str:
+        """
+        获取应用数据目录
+        
+        Returns:
+            应用数据目录路径
+        """
+        return self.app_data_dir
     
     def _format_size(self, size: int) -> str:
         """

@@ -74,12 +74,22 @@ def initialize_services():
         服务工厂实例
     """
     logging.info("开始初始化基础服务")
-    service_factory = ServiceFactory()
+    
+    # 使用ServiceFactory.get_instance()获取单例实例
+    from .services.core.service_factory import ServiceFactory
+    service_factory = ServiceFactory.get_instance()
     
     if service_factory.initialize_all_services():
         logging.info("基础服务初始化成功")
     else:
         logging.error("部分基础服务初始化失败")
+    
+    # 手动注册可能缺失的服务
+    from .services.register_services import register_missing_services
+    if register_missing_services(service_factory):
+        logging.info("所有缺失服务已成功注册")
+    else:
+        logging.warning("部分缺失服务注册失败")
     
     return service_factory
 
@@ -95,6 +105,13 @@ def main():
     try:
         # 初始化基础服务
         service_factory = initialize_services()
+        
+        # 确保我们使用的是单例实例
+        from .services.core.service_factory import ServiceFactory
+        singleton_factory = ServiceFactory.get_instance()
+        if singleton_factory != service_factory:
+            logging.warning("检测到多个ServiceFactory实例，将使用单例实例")
+            service_factory = singleton_factory
         
         # 创建主窗口
         root = tk.Tk()

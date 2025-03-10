@@ -63,35 +63,173 @@ class AudioTranslatorGUI:
         # 设置应用程序图标
         self._set_app_icon()
         
+        # 跟踪服务状态
+        self.services_status = {
+            "file_service": False,
+            "audio_service": False,
+            "translator_service": False,
+            "category_service": False,
+            "ucs_service": False
+        }
+        
         # 获取基础服务
         self.service_factory = service_factory
-        self.file_service = service_factory.get_file_service()
-        self.audio_service = service_factory.get_audio_service()
+        
+        # 确保使用单例实例
+        from ..services.core.service_factory import ServiceFactory
+        singleton_factory = ServiceFactory.get_instance()
+        if singleton_factory is not service_factory:
+            logger.warning("检测到ServiceFactory实例不一致，将使用单例实例")
+            self.service_factory = singleton_factory
+            service_factory = singleton_factory
+        
+        # 获取主题服务
+        try:
+            self.theme_service = service_factory.get_service('theme_service')
+            if self.theme_service:
+                logger.info("成功获取theme_service")
+            else:
+                logger.warning("未能获取theme_service，将使用默认主题")
+        except Exception as e:
+            logger.error(f"获取主题服务失败: {e}")
+            self.theme_service = None
+
+        # 获取文件服务
+        try:
+            self.file_service = service_factory.get_file_service()
+            if self.file_service:
+                self.services_status["file_service"] = True
+                logger.info("成功获取file_service")
+            else:
+                # 尝试直接从单例获取
+                self.file_service = service_factory.get_service('file_service')
+                if self.file_service:
+                    self.services_status["file_service"] = True
+                    logger.info("通过get_service方法成功获取file_service")
+        except Exception as e:
+            logger.error(f"获取文件服务失败: {e}")
+            self.file_service = None
+            
+        # 获取音频服务
+        try:
+            self.audio_service = service_factory.get_audio_service()
+            if self.audio_service:
+                self.services_status["audio_service"] = True
+                logger.info("成功获取audio_service")
+            else:
+                # 尝试直接从单例获取
+                self.audio_service = service_factory.get_service('audio_service')
+                if self.audio_service:
+                    self.services_status["audio_service"] = True
+                    logger.info("通过get_service方法成功获取audio_service")
+        except Exception as e:
+            logger.error(f"获取音频服务失败: {e}")
+            self.audio_service = None
         
         # 获取翻译服务
-        self.translator_service = service_factory.get_translator_service()
-        if not self.translator_service:
-            logger.warning("无法获取翻译服务，翻译功能可能无法正常工作")
+        try:
+            self.translator_service = service_factory.get_translator_service()
+            if self.translator_service:
+                self.services_status["translator_service"] = True
+                logger.info("成功获取translator_service")
+            else:
+                # 尝试直接通过get_service获取
+                self.translator_service = service_factory.get_service('translator_service')
+                if self.translator_service:
+                    self.services_status["translator_service"] = True
+                    logger.info("通过get_service方法成功获取translator_service")
+                else:
+                    logger.warning("无法获取翻译服务，翻译功能可能无法正常工作")
+        except Exception as e:
+            logger.warning(f"获取翻译服务时发生错误: {e}，翻译功能可能无法正常工作")
+            self.translator_service = None
         
+        # 检查基础服务
         if not self.file_service or not self.audio_service:
             logger.error("无法获取基础服务，应用程序可能无法正常工作")
-            messagebox.showerror("初始化错误", "无法获取基础服务，应用程序可能无法正常工作")
+            # 尝试从单例实例获取
+            try:
+                from ..services.core.service_factory import ServiceFactory
+                singleton_factory = ServiceFactory.get_instance()
+                if singleton_factory and singleton_factory != service_factory:
+                    if not self.file_service:
+                        self.file_service = singleton_factory.get_file_service()
+                        if self.file_service:
+                            self.services_status["file_service"] = True
+                            logger.info("从单例实例成功获取file_service")
+                    
+                    if not self.audio_service:
+                        self.audio_service = singleton_factory.get_audio_service()
+                        if self.audio_service:
+                            self.services_status["audio_service"] = True
+                            logger.info("从单例实例成功获取audio_service")
+            except Exception as e:
+                logger.error(f"尝试从单例获取基础服务时发生错误: {e}")
         
         # 初始化管理器
         self.file_manager = FileManager()
         
         # 获取UCS服务实例用于分类管理
-        self.ucs_service = service_factory.get_service("ucs_service")
-        if not self.ucs_service:
-            logger.error("无法获取UCS服务，分类功能可能无法正常工作")
-            messagebox.showerror("初始化错误", "无法获取UCS服务，分类功能可能无法正常工作")
+        try:
+            self.ucs_service = service_factory.get_service("ucs_service")
+            if self.ucs_service:
+                self.services_status["ucs_service"] = True
+                logger.info("成功获取ucs_service")
+            else:
+                logger.error("无法获取UCS服务，分类功能可能无法正常工作")
+        except Exception as e:
+            logger.error(f"获取UCS服务失败: {e}")
+            self.ucs_service = None
         
-        # 初始化分类管理器并传入UCS服务和根窗口
+        # 获取分类服务
+        try:
+            self.category_service = service_factory.get_category_service()
+            if self.category_service:
+                self.services_status["category_service"] = True
+                logger.info("成功获取category_service")
+        
+            # 如果通过常规方式获取失败，尝试从单例实例获取
+            if not self.category_service:
+                logger.warning("通过传入的service_factory获取category_service失败，尝试从单例实例获取")
+                from ..services.core.service_factory import ServiceFactory
+                singleton_factory = ServiceFactory.get_instance()
+                if singleton_factory and singleton_factory != service_factory:
+                    self.category_service = singleton_factory.get_category_service()
+                    if self.category_service:
+                        self.services_status["category_service"] = True
+                        logger.info("从单例实例成功获取category_service")
+            
+            # 如果依然无法获取，尝试直接创建一个分类服务实例
+            if not self.category_service:
+                logger.warning("无法获取分类服务，尝试创建新实例")
+                from ..services.business.category.category_service import CategoryService
+                self.category_service = CategoryService()
+                
+                # 初始化新创建的分类服务
+                if self.category_service.initialize():
+                    self.services_status["category_service"] = True
+                    logger.info("成功创建并初始化category_service")
+                    
+                    # 注册到服务工厂
+                    service_factory.register_service(self.category_service)
+                    logger.info("已将新创建的category_service注册到服务工厂")
+                    
+        except Exception as e:
+            logger.error(f"获取分类服务失败: {e}")
+            self.category_service = None
+            
+        # 显示服务状态消息
+        self._show_services_status()
+        
+        # 初始化分类管理器并传入根窗口
         self.category_manager = CategoryManager(self.root)
         
-        # 手动将UCS服务传递给分类管理器
-        if hasattr(self.category_manager, 'set_ucs_service') and self.ucs_service:
-            self.category_manager.set_ucs_service(self.ucs_service)
+        # 设置分类服务
+        if self.category_service:
+            self.category_manager.set_category_service(self.category_service)
+        else:
+            logger.error("分类服务未设置")
+            messagebox.showwarning("警告", "分类服务未设置，分类功能可能无法正常工作")
         
         # 初始化变量
         self.current_directory = tk.StringVar(value=str(self.file_manager.current_directory))
@@ -135,19 +273,43 @@ class AudioTranslatorGUI:
     
     def _setup_styles(self):
         """设置UI样式"""
-        # 定义颜色方案
-        self.COLORS = {
-            'bg_dark': '#1E1E1E',  # 深色背景
-            'bg_light': '#2D2D2D',  # 稍亮的背景
-            'bg_accent': '#3C3C3C',  # 强调背景
-            'fg': '#FFFFFF',        # 前景文本颜色
-            'accent': '#0078D7',    # 强调色
-            'highlight': '#505050', # 高亮色
-            'active': '#007ACC',    # 激活状态颜色
-            'hover': '#404040',     # 悬浮状态颜色
-            'selected': '#264F78',  # 选中状态颜色
-            'border': '#555555',    # 边框颜色
-        }
+        # 如果有主题服务，使用主题服务的颜色设置
+        if hasattr(self, 'theme_service') and self.theme_service:
+            current_theme = self.theme_service.get_current_theme()
+            theme_colors = self.theme_service.get_theme_colors(current_theme)
+            
+            # 定义颜色方案
+            self.COLORS = {
+                'bg_dark': theme_colors['bg_dark'],
+                'bg_light': theme_colors['bg_light'],
+                'bg_accent': theme_colors.get('bg_accent', theme_colors['bg_light']),
+                'bg_alternate': theme_colors.get('bg_alternate', self._get_alternate_color(theme_colors['bg_light'])),
+                'fg': theme_colors['fg'],
+                'accent': theme_colors['accent'],
+                'highlight': theme_colors.get('highlight', theme_colors['border']),
+                'active': theme_colors.get('active', theme_colors['accent']),
+                'hover': theme_colors.get('hover', theme_colors['border']),
+                'selected': theme_colors.get('selected', theme_colors['accent']),
+                'border': theme_colors['border'],
+            }
+            
+            # 应用主题到窗口
+            self.theme_service.setup_window_theme(self.root, current_theme)
+        else:
+            # 使用硬编码的默认颜色方案
+            self.COLORS = {
+                'bg_dark': '#212121',  # 深色背景
+                'bg_light': '#333333',  # 稍亮的背景
+                'bg_accent': '#424242',  # 强调背景
+                'bg_alternate': '#292929',  # 交替背景（比bg_light稍暗）
+                'fg': '#FFFFFF',        # 前景文本颜色
+                'accent': '#2196F3',    # 强调色
+                'highlight': '#5E5E5E', # 高亮色
+                'active': '#1976D2',    # 激活状态颜色
+                'hover': '#484848',     # 悬浮状态颜色
+                'selected': '#1976D2',  # 选中状态颜色
+                'border': '#555555',    # 边框颜色
+            }
         
         # 获取当前系统
         system = platform.system()
@@ -168,13 +330,15 @@ class AudioTranslatorGUI:
             background=self.COLORS['bg_light'],
             foreground=self.COLORS['fg'],
             fieldbackground=self.COLORS['bg_light'],
-            borderwidth=0)
+            borderwidth=1,
+            rowheight=24)  # 增加行高改善可读性
         
         # 配置Treeview标题样式
         style.configure("Treeview.Heading",
             background=self.COLORS['bg_accent'],
             foreground=self.COLORS['fg'],
-            relief="flat")
+            relief="flat",
+            font=('Arial', 10, 'bold'))  # 使用粗体改善可读性
         style.map("Treeview.Heading",
             background=[('active', self.COLORS['hover'])])
             
@@ -182,6 +346,35 @@ class AudioTranslatorGUI:
         style.map("Treeview",
             background=[('selected', self.COLORS['selected'])],
             foreground=[('selected', self.COLORS['fg'])])
+            
+        # 确保Treeview行有交替颜色以提高可读性
+        try:
+            # 尝试使用 _configure_treeview 方法
+            if hasattr(style, '_configure_treeview') and callable(getattr(style, '_configure_treeview')):
+                style._configure_treeview()  # 重新配置Treeview以应用上述更改
+                logger.debug("使用 _configure_treeview 方法配置Treeview样式")
+            else:
+                # 在较新的tkinter版本中，可以使用以下方法配置交替行颜色
+                style.configure("Treeview", 
+                    background=self.COLORS['bg_light'],
+                    foreground=self.COLORS['fg'],
+                    fieldbackground=self.COLORS['bg_light'])
+                
+                # 尝试设置交替行颜色（如果支持）
+                style.configure("Treeview", rowheight=24)
+                logger.debug("使用替代方法配置Treeview样式")
+        except Exception as e:
+            logger.warning(f"无法配置Treeview基本样式: {e}")
+            
+        # 尝试替代方案：交替行颜色的配置
+        try:
+            # 尝试通过tag_configure配置交替行颜色
+            # 这将在实际创建Treeview后应用
+            self.tree_odd_row = self.COLORS['bg_light']
+            self.tree_even_row = self.COLORS.get('bg_alternate', self.COLORS['bg_dark'])
+            logger.debug(f"设置Treeview交替行颜色: 奇数行 {self.tree_odd_row}, 偶数行 {self.tree_even_row}")
+        except Exception as e:
+            logger.warning(f"无法预配置Treeview交替行颜色: {e}")
             
         # 配置标签样式
         style.configure("TLabel", 
@@ -290,14 +483,64 @@ class AudioTranslatorGUI:
         # 设置根窗口背景色
         self.root.configure(background=self.COLORS['bg_dark'])
     
+    def _get_alternate_color(self, base_color: str) -> str:
+        """
+        根据基础颜色生成交替行颜色
+        
+        Args:
+            base_color: 基础颜色，格式为#RRGGBB
+            
+        Returns:
+            交替行颜色，格式为#RRGGBB
+        """
+        try:
+            # 将颜色转换为RGB值
+            r = int(base_color[1:3], 16)
+            g = int(base_color[3:5], 16)
+            b = int(base_color[5:7], 16)
+            
+            # 判断是否是暗色
+            is_dark = (r + g + b) < 384  # 128 * 3
+            
+            # 对暗色，稍微变亮；对亮色，稍微变暗
+            if is_dark:
+                # 变亮10%
+                r = min(255, r + 25)
+                g = min(255, g + 25)
+                b = min(255, b + 25)
+            else:
+                # 变暗10%
+                r = max(0, r - 25)
+                g = max(0, g - 25)
+                b = max(0, b - 25)
+            
+            # 转换回十六进制颜色
+            return f"#{r:02x}{g:02x}{b:02x}"
+        except Exception as e:
+            logger.warning(f"生成交替行颜色失败: {e}")
+            # 默认返回略微不同的颜色
+            if base_color.startswith('#'):
+                # 简单地修改颜色，使其稍有不同
+                if base_color[1] < 'c':
+                    return '#' + chr(ord(base_color[1]) + 1) + base_color[2:]
+                else:
+                    return '#' + chr(ord(base_color[1]) - 1) + base_color[2:]
+            return "#333333"  # 默认暗色
+    
     def _create_ui(self):
         """创建主用户界面"""
+        # 在创建UI之前设置样式
+        self._setup_styles()
+        
         # 创建主框架
         self.main_frame = ttk.Frame(self.root, style="Dark.TFrame")
         self.main_frame.pack(fill=tk.BOTH, expand=True)
         
         # 设置根窗口背景
         self.root.configure(background=self.COLORS['bg_dark'])
+        
+        # 创建菜单栏
+        self._create_menus()
         
         # 创建工具栏
         self._create_toolbar()
@@ -353,6 +596,41 @@ class AudioTranslatorGUI:
         
         # 更新翻译策略信息
         self._update_strategy_info()
+        
+        # 确保所有控件都应用正确的样式
+        self._apply_theme_to_all_widgets()
+        
+        # 绑定事件
+        self._bind_events()
+        
+    def _apply_theme_to_all_widgets(self):
+        """确保所有控件都应用了正确的主题和样式"""
+        try:
+            # 如果启用了主题服务，对所有控件应用主题
+            if hasattr(self, 'theme_service') and self.theme_service:
+                self.theme_service.setup_window_theme(self.root)
+            
+            # 递归应用样式到所有子控件
+            def apply_style_to_widget(widget):
+                # 尝试设置背景和前景色
+                try:
+                    if isinstance(widget, tk.Widget) and not isinstance(widget, ttk.Widget):
+                        widget.configure(bg=self.COLORS['bg_dark'])
+                        if hasattr(widget, 'cget') and widget.cget('foreground') != '':
+                            widget.configure(fg=self.COLORS['fg'])
+                except Exception as e:
+                    logger.debug(f"无法设置控件样式: {e}")
+                
+                # 递归应用到所有子控件
+                for child in widget.winfo_children():
+                    apply_style_to_widget(child)
+            
+            # 从根窗口开始应用样式
+            apply_style_to_widget(self.root)
+            
+            logger.debug("已应用主题样式到所有控件")
+        except Exception as e:
+            logger.error(f"应用主题样式失败: {e}")
     
     def _create_toolbar(self):
         """创建工具栏"""
@@ -478,6 +756,16 @@ class AudioTranslatorGUI:
         
         self.category_tree.heading("#0", text="分类名称", anchor=tk.W)
         self.category_tree.heading("count", text="数量", anchor=tk.CENTER)
+        
+        # 应用交替行颜色，设置标签用于交替行
+        if hasattr(self, 'tree_odd_row') and hasattr(self, 'tree_even_row'):
+            try:
+                # 配置标签用于交替行颜色
+                self.category_tree.tag_configure('odd', background=self.tree_odd_row)
+                self.category_tree.tag_configure('even', background=self.tree_even_row)
+                logger.debug("已应用Treeview交替行颜色配置")
+            except Exception as e:
+                logger.warning(f"应用交替行颜色失败: {e}")
         
         # 绑定事件
         self.category_tree.bind("<<TreeviewSelect>>", self._on_category_selected)
@@ -967,10 +1255,10 @@ class AudioTranslatorGUI:
             messagebox.showerror("错误", f"分类 '{category_name}' 已存在！", parent=self.root)
             return
 
-        # 获取UCS服务
-        ucs_service = self.service_factory.get_service("ucs_service")
-        if not ucs_service:
-            messagebox.showerror("错误", "UCS服务不可用，无法添加分类！", parent=self.root)
+        # 获取分类服务
+        category_service = self.service_factory.get_service("category_service")
+        if not category_service:
+            messagebox.showerror("错误", "分类服务不可用，无法添加分类！", parent=self.root)
             return
 
         # 添加分类
@@ -984,8 +1272,8 @@ class AudioTranslatorGUI:
                 "count": 0
             }
             
-            # 添加到UCS服务
-            ucs_service.add_category(category_data)
+            # 添加到分类服务
+            category_service.add_category(category_data)
             
             # 添加到分类树
             category_id = self.category_tree.insert("", "end", text=category_name, values=("0"))
@@ -1030,10 +1318,10 @@ class AudioTranslatorGUI:
                                 parent=self.root)
             return
         
-        # 获取UCS服务
-        ucs_service = self.service_factory.get_service("ucs_service")
-        if not ucs_service:
-            messagebox.showerror("错误", "UCS服务不可用，无法添加子分类！", parent=self.root)
+        # 获取分类服务
+        category_service = self.service_factory.get_service("category_service")
+        if not category_service:
+            messagebox.showerror("错误", "分类服务不可用，无法添加子分类！", parent=self.root)
             return
         
         # 添加子分类
@@ -1047,8 +1335,8 @@ class AudioTranslatorGUI:
                 "count": 0
             }
             
-            # 添加到UCS服务
-            ucs_service.add_category(subcategory_data)
+            # 添加到分类服务
+            category_service.add_category(subcategory_data)
             
             # 添加到分类树
             subcategory_id = self.category_tree.insert(parent_id, "end", text=subcategory_name, values=(subcategory.count if hasattr(subcategory, 'count') else 0,))
@@ -1103,10 +1391,10 @@ class AudioTranslatorGUI:
             messagebox.showerror("错误", f"分类 '{new_name}' 已存在！", parent=self.root)
             return
         
-        # 获取UCS服务
-        ucs_service = self.service_factory.get_service("ucs_service")
-        if not ucs_service:
-            messagebox.showerror("错误", "UCS服务不可用，无法重命名分类！", parent=self.root)
+        # 获取分类服务
+        category_service = self.service_factory.get_service("category_service")
+        if not category_service:
+            messagebox.showerror("错误", "分类服务不可用，无法重命名分类！", parent=self.root)
             return
         
         # 重命名分类
@@ -1118,8 +1406,8 @@ class AudioTranslatorGUI:
                 old_path = f"{parent_name}/{current_name}"
                 new_path = f"{parent_name}/{new_name}"
             
-            # 更新UCS服务中的分类
-            ucs_service.rename_category(old_path, new_path)
+            # 更新分类服务中的分类
+            category_service.rename_category(old_path, new_path)
             
             # 更新分类树中的分类名称
             self.category_tree.item(category_id, text=new_name)
@@ -1159,10 +1447,10 @@ class AudioTranslatorGUI:
                                   parent=self.root):
             return
         
-        # 获取UCS服务
-        ucs_service = self.service_factory.get_service("ucs_service")
-        if not ucs_service:
-            messagebox.showerror("错误", "UCS服务不可用，无法删除分类！", parent=self.root)
+        # 获取分类服务
+        category_service = self.service_factory.get_service("category_service")
+        if not category_service:
+            messagebox.showerror("错误", "分类服务不可用，无法删除分类！", parent=self.root)
             return
         
         # 获取父分类名称
@@ -1178,8 +1466,8 @@ class AudioTranslatorGUI:
         
         # 删除分类
         try:
-            # 从UCS服务中删除分类
-            ucs_service.delete_category(category_path)
+            # 从分类服务中删除分类
+            category_service.delete_category(category_path)
             
             # 从分类树中删除分类
             self.category_tree.delete(category_id)
@@ -1226,66 +1514,143 @@ class AudioTranslatorGUI:
         for item in self.category_tree.get_children():
             self.category_tree.delete(item)
         
-        # 获取分类管理器
-        category_manager = CategoryManager(self.root)
-        if not category_manager:
-            logger.error("无法获取分类管理器，分类树加载失败")
+        # 使用已有的分类管理器而不是创建新实例
+        if not self.category_manager:
+            logger.error("分类管理器未初始化，分类树加载失败")
             return
         
-        # 获取所有分类
-        categories = category_manager.get_all_categories()
-        if not categories:
-            logger.warning("未找到任何分类")
-            return
+        # 确保分类管理器已设置分类服务
+        if not self.category_manager.category_service:
+            if self.category_service:
+                self.category_manager.set_category_service(self.category_service)
+                logger.info("已将分类服务设置到分类管理器")
+            else:
+                logger.error("分类服务未设置，分类树加载失败")
+                return
         
-        # 添加根分类
-        for cat_id, category in categories.items():
-            if not category.subcategory:  # 只添加根分类
-                # 创建分类节点
-                node_id = self.category_tree.insert("", "end", text=category.name_zh, 
-                                                   values=(category.count if hasattr(category, 'count') else 0,))
+        try:
+            # 获取所有分类
+            categories = self.category_manager.get_all_categories()
+            if not categories:
+                logger.warning("未找到任何分类")
+                return
+            
+            # 添加根分类
+            root_categories = {}
+            
+            # 筛选出根分类（没有parent_id或subcategory为空的分类）
+            for cat_id, category in categories.items():
+                is_root = (not hasattr(category, 'parent_id') or not category.parent_id)
+                if is_root:
+                    root_categories[cat_id] = category
+            
+            # 如果没有找到明确的根分类，使用不是其他分类子分类的分类作为根分类
+            if not root_categories:
+                logger.info("未找到明确的根分类，尝试推断根分类")
+                # 创建一个集合来存储所有作为子分类的ID
+                child_ids = set()
+                for cat_id, category in categories.items():
+                    if hasattr(category, 'parent_id') and category.parent_id:
+                        child_ids.add(category.parent_id)
                 
-                # 递归添加子分类
-                self._add_subcategories(cat_id, node_id, category_manager)
-        
-        # 更新标题显示分类数量
-        title_text = f"分类管理 (共{len(categories)}个分类)"
-        # 直接更新分类区域的标题
-        for widget in self.category_area.winfo_children():
-            if isinstance(widget, ttk.LabelFrame) or isinstance(widget, ttk.Frame):
-                for child in widget.winfo_children():
-                    if isinstance(child, ttk.Label) and "分类管理" in child.cget("text"):
-                        child.config(text=title_text)
-                        break
-    
-    def _add_subcategories(self, parent_id, tree_parent, category_manager):
+                # 不在child_ids中的分类ID可以视为根分类
+                for cat_id, category in categories.items():
+                    if cat_id not in child_ids:
+                        root_categories[cat_id] = category
+            
+            # 对根分类按名称排序
+            sorted_root_categories = list(root_categories.values())
+            try:
+                sorted_root_categories.sort(key=lambda x: x.name_zh.lower() if hasattr(x, 'name_zh') else '')
+            except Exception as e:
+                logger.error(f"排序根分类失败: {e}")
+            
+            # 添加根分类，带交替行颜色
+            for i, category in enumerate(sorted_root_categories):
+                try:
+                    # 确定行标签（奇数行或偶数行）
+                    row_tags = ('odd',) if i % 2 == 0 else ('even',)
+                    
+                    # 创建分类节点
+                    node_id = self.category_tree.insert(
+                        "", "end", 
+                        text=category.name_zh if hasattr(category, 'name_zh') else category.cat_id,
+                        values=(category.count if hasattr(category, 'count') else 0,),
+                        tags=row_tags  # 应用行标签
+                    )
+                    
+                    # 递归添加子分类
+                    self._add_subcategories(category.cat_id, node_id, self.category_manager, depth=1)
+                except Exception as e:
+                    logger.error(f"添加根分类节点失败: {e}, 分类ID: {category.cat_id if hasattr(category, 'cat_id') else '未知'}")
+                    continue
+                
+            # 更新标题显示分类数量
+            title_text = f"分类管理 (共{len(categories)}个分类)"
+            # 直接更新分类区域的标题
+            for widget in self.category_area.winfo_children():
+                if isinstance(widget, ttk.LabelFrame) or isinstance(widget, ttk.Frame):
+                    for child in widget.winfo_children():
+                        if isinstance(child, ttk.Label) and "分类管理" in child.cget("text"):
+                            child.config(text=title_text)
+                            break
+        except Exception as e:
+            logger.error(f"加载分类树时发生错误: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    def _add_subcategories(self, parent_id, tree_parent, category_manager=None, depth=1):
         """递归添加子分类
         
         Args:
             parent_id: 父分类ID
             tree_parent: 树中的父节点ID
-            category_manager: 分类管理器实例
+            category_manager: 分类管理器实例，如果未提供则使用self.category_manager
+            depth: 当前深度，用于决定奇偶行标签
         """
-        # 获取子分类
-        subcategories = category_manager.get_subcategories(parent_id)
-        if not subcategories:
+        # 如果未提供分类管理器，使用已有的实例
+        if category_manager is None:
+            category_manager = self.category_manager
+            
+        if not category_manager or not category_manager.category_service:
+            logger.error("分类管理器或分类服务未设置，无法添加子分类")
+            return
+            
+        # 获取子分类（字典形式）
+        subcategories_dict = category_manager.get_subcategories(parent_id)
+        if not subcategories_dict:
             return
         
-        # 按名称排序
-        subcategories.sort(key=lambda x: x.name_zh.lower())
+        # 将字典值转换为列表并按名称排序
+        subcategories_list = list(subcategories_dict.values())
+        try:
+            # 按中文名称排序
+            subcategories_list.sort(key=lambda x: x.name_zh.lower() if hasattr(x, 'name_zh') else '')
+        except Exception as e:
+            logger.error(f"排序子分类时出错: {e}")
+            # 如果排序失败，仍然可以显示未排序的子分类
         
         # 添加子分类
-        for subcategory in subcategories:
-            # 创建节点
-            node_id = self.category_tree.insert(
-                tree_parent, 
-                "end", 
-                text=subcategory.name_zh,
-                values=(subcategory.count if hasattr(subcategory, 'count') else 0,)
-            )
-            
-            # 递归添加子分类的子分类
-            self._add_subcategories(subcategory.cat_id, node_id, category_manager)
+        for i, subcategory in enumerate(subcategories_list):
+            try:
+                # 确定行标签（奇数行或偶数行）- 根据深度和索引计算
+                # 这样可以确保同一层级的相邻节点有不同的颜色
+                row_tags = ('odd',) if (depth + i) % 2 == 0 else ('even',)
+                
+                # 创建节点
+                node_id = self.category_tree.insert(
+                    tree_parent, 
+                    "end", 
+                    text=subcategory.name_zh if hasattr(subcategory, 'name_zh') else subcategory.cat_id,
+                    values=(subcategory.count if hasattr(subcategory, 'count') else 0,),
+                    tags=row_tags  # 应用行标签
+                )
+                
+                # 递归添加子分类的子分类
+                self._add_subcategories(subcategory.cat_id, node_id, category_manager, depth + 1)
+            except Exception as e:
+                logger.error(f"添加子分类节点时出错: {e}, 分类ID: {subcategory.cat_id if hasattr(subcategory, 'cat_id') else '未知'}")
+                continue
 
     def _on_open_translation_strategy_dialog(self):
         """打开翻译策略配置对话框"""
@@ -1325,4 +1690,37 @@ class AudioTranslatorGUI:
             # 对话框关闭后可以添加任何需要的更新操作
         else:
             messagebox.showerror("错误", "无法获取命名服务")
+            
+    def _show_services_status(self):
+        """显示服务状态消息"""
+        # 检查关键服务
+        critical_services = ["file_service", "audio_service"]
+        critical_missing = [s for s in critical_services if not self.services_status[s]]
+        
+        # 非关键但重要的服务
+        important_services = ["translator_service", "category_service", "ucs_service"]
+        important_missing = [s for s in important_services if not self.services_status[s]]
+        
+        # 如果有关键服务缺失，显示错误消息
+        if critical_missing:
+            missing_names = ", ".join(critical_missing)
+            messagebox.showerror(
+                "初始化错误", 
+                f"无法获取以下关键服务: {missing_names}\n\n"
+                "应用程序可能无法正常工作。请尝试重启应用程序，如果问题持续存在，请检查应用程序日志。"
+            )
+        
+        # 如果有重要但非关键服务缺失，显示警告消息
+        elif important_missing:
+            missing_names = ", ".join(important_missing)
+            messagebox.showwarning(
+                "部分功能受限", 
+                f"以下服务未能正常加载: {missing_names}\n\n"
+                "部分功能可能无法使用，但应用程序可以继续运行。"
+            )
+            
+        # 记录服务状态
+        services_status_str = ", ".join([f"{s}: {'✓' if status else '✗'}" 
+                                        for s, status in self.services_status.items()])
+        logger.info(f"服务状态: {services_status_str}")
             

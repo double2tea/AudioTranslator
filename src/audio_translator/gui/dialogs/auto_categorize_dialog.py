@@ -28,16 +28,17 @@ class AutoCategorizeDialog:
     支持批量处理文件分类操作。
     """
     
-    # 深色主题配色
+    # 深色主题默认配色（将被主题服务替换）
     COLORS = {
-        'bg_dark': '#1E1E1E',      # 主背景色
-        'bg_light': '#2D2D2D',     # 次要背景
+        'bg_dark': '#212121',      # 主背景色
+        'bg_light': '#333333',     # 次要背景
         'fg': '#FFFFFF',           # 主文本色
-        'fg_dim': '#AAAAAA',       # 次要文本
-        'accent': '#007ACC',       # 强调色
-        'border': '#3D3D3D',       # 边框色
-        'hover': '#3D3D3D',        # 悬停色
-        'selected': '#094771'      # 选中色
+        'fg_dim': '#BBBBBB',       # 次要文本
+        'accent': '#2196F3',       # 强调色
+        'border': '#555555',       # 边框色
+        'hover': '#484848',        # 悬停色
+        'selected': '#1976D2',     # 选中色
+        'disabled': '#7D7D7D'      # 禁用色
     }
     
     def __init__(self, parent: tk.Tk, files: List[str], 
@@ -48,24 +49,54 @@ class AutoCategorizeDialog:
         Args:
             parent: 父窗口
             files: 要分类的文件列表
-            category_service: 分类服务
-            base_path: 目标基础路径
+            category_service: 分类服务实例
+            base_path: 文件基础路径
         """
         self.parent = parent
         self.files = files
         self.category_service = category_service
         self.base_path = base_path
+        self.result = None
         
         # 创建对话框
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("自动分类")
-        self.dialog.geometry("800x600")
+        self.dialog.geometry("900x600")
         self.dialog.minsize(700, 500)
-        self.dialog.configure(bg=self.COLORS['bg_dark'])
         
-        # 设置模态对话框
+        # 设置模态
         self.dialog.transient(parent)
         self.dialog.grab_set()
+        
+        # 尝试获取主题服务
+        try:
+            # 尝试获取主题服务
+            from ...services.core.service_factory import ServiceFactory
+            service_factory = ServiceFactory.get_instance()
+            if service_factory:
+                theme_service = service_factory.get_service('theme_service')
+                if theme_service:
+                    # 获取当前主题颜色
+                    self.COLORS = theme_service.get_theme_colors()
+                    # 应用主题到对话框
+                    theme_service.setup_dialog_theme(self.dialog)
+        except Exception as e:
+            logger.warning(f"应用主题到对话框失败: {e}")
+        
+        # 变量初始化
+        self.progress_var = tk.DoubleVar(value=0)
+        self.status_var = tk.StringVar(value="准备就绪")
+        self.current_file_var = tk.StringVar(value="")
+        
+        # 分类结果
+        self.categorization_results = {}
+        
+        # 创建UI元素
+        self.create_widgets()
+        
+        # 启动分类线程
+        self.categorize_thread = None
+        self.stop_flag = False
         
         # 设置图标
         try:
@@ -75,15 +106,6 @@ class AutoCategorizeDialog:
             
         # 设置关闭事件
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_cancel)
-        
-        # 初始化结果变量
-        self.result = None
-        
-        # 文件分类结果
-        self.file_categories = {}
-        
-        # 创建UI
-        self.create_widgets()
         
         # 预分析文件
         self.analyze_files()
@@ -125,7 +147,6 @@ class AutoCategorizeDialog:
         self.tree.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # 进度条
-        self.progress_var = tk.DoubleVar(value=0)
         self.progress_bar = ttk.Progressbar(
             main_frame, 
             orient=tk.HORIZONTAL, 
@@ -135,7 +156,6 @@ class AutoCategorizeDialog:
         self.progress_bar.pack(fill=tk.X, pady=(0, 10))
         
         # 状态标签
-        self.status_var = tk.StringVar(value="准备分析...")
         status_label = ttk.Label(main_frame, textvariable=self.status_var)
         status_label.pack(fill=tk.X, pady=(0, 10))
         
@@ -198,7 +218,7 @@ class AutoCategorizeDialog:
                     naming_fields = self.category_service.get_naming_fields(filename, cat_id)
                     
                     # 存储分类结果
-                    self.file_categories[file_path] = {
+                    self.categorization_results[file_path] = {
                         'cat_id': cat_id,
                         'cat_name': cat_name,
                         'naming_fields': naming_fields
@@ -212,7 +232,7 @@ class AutoCategorizeDialog:
                     )
                 else:
                     # 如果找不到分类，使用默认分类
-                    self.file_categories[file_path] = {
+                    self.categorization_results[file_path] = {
                         'cat_id': 'OTHER',
                         'cat_name': '其他',
                         'naming_fields': {}
@@ -264,7 +284,7 @@ class AutoCategorizeDialog:
             return
             
         # 获取当前的分类信息
-        current_cat = self.file_categories.get(file_path, {})
+        current_cat = self.categorization_results.get(file_path, {})
         current_cat_id = current_cat.get('cat_id', 'OTHER')
         
         # 获取所有分类
@@ -301,7 +321,7 @@ class AutoCategorizeDialog:
         naming_fields = self.category_service.get_naming_fields(filename, new_cat_id)
         
         # 更新存储的分类结果
-        self.file_categories[file_path] = {
+        self.categorization_results[file_path] = {
             'cat_id': new_cat_id,
             'cat_name': new_cat_name,
             'naming_fields': naming_fields
@@ -340,7 +360,7 @@ class AutoCategorizeDialog:
                 self.status_var.set(f"正在处理: {filename}")
                 
                 # 获取分类信息
-                category_info = self.file_categories.get(file_path, {})
+                category_info = self.categorization_results.get(file_path, {})
                 cat_id = category_info.get('cat_id', 'OTHER')
                 
                 try:

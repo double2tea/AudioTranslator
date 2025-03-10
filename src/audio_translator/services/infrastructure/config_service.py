@@ -633,12 +633,104 @@ class ConfigService(BaseService):
         
     def get_config_path(self, filename: str) -> Path:
         """
-        获取配置文件的路径
+        获取配置文件路径
         
         Args:
             filename: 配置文件名
             
         Returns:
-            配置文件的完整路径
+            配置文件完整路径
         """
-        return self.config_dir / filename 
+        return self.config_dir / filename
+        
+    def get_data_dir(self) -> Path:
+        """
+        获取数据目录路径
+        
+        Returns:
+            数据目录路径
+        """
+        logger.info("正在搜索数据目录...")
+        
+        # 从配置中获取自定义数据目录
+        custom_data_dir = self.get("app.data_dir")
+        if custom_data_dir:
+            custom_path = Path(custom_data_dir)
+            if custom_path.exists():
+                logger.info(f"使用自定义数据目录: {custom_path}")
+                return custom_path
+            else:
+                logger.warning(f"配置的数据目录不存在: {custom_path}")
+        
+        # 检查可能的数据目录位置
+        possible_locations = [
+            # 优先使用项目根目录下的data目录
+            Path(__file__).parent.parent.parent.parent.parent / "data",
+            # 备选：项目src同级的data目录
+            Path(__file__).parent.parent.parent.parent / "data",
+            # 备选：当前工作目录下的data目录
+            Path(os.getcwd()) / "data",
+            # 最后备选：工作目录下的src/data目录
+            Path(os.getcwd()) / "src" / "data"
+        ]
+        
+        # 输出所有可能的位置以便调试
+        for i, loc in enumerate(possible_locations):
+            logger.debug(f"数据目录候选 #{i+1}: {loc} (存在: {loc.exists()})")
+        
+        # 检查每个位置是否存在并包含分类文件
+        for location in possible_locations:
+            if location.exists():
+                category_file = location / "_categorylist.csv"
+                if category_file.exists():
+                    logger.info(f"找到数据目录，包含分类文件: {location} (文件大小: {category_file.stat().st_size} 字节)")
+                    return location
+                elif location.is_dir():
+                    logger.debug(f"找到数据目录，但不包含分类文件: {location}")
+                    files_in_dir = list(location.glob("*"))
+                    if files_in_dir:
+                        logger.debug(f"目录内容: {', '.join(str(f.name) for f in files_in_dir[:5])}{' 等' if len(files_in_dir) > 5 else ''}")
+                    return location
+        
+        # 如果没有找到任何目录，使用第一个位置（无论是否存在）
+        default_dir = possible_locations[0]
+        logger.warning(f"未找到有效的数据目录，使用默认位置: {default_dir}")
+        os.makedirs(default_dir, exist_ok=True)
+        return default_dir
+
+    def get_bilingual_description_prompt(self) -> str:
+        """
+        获取双语描述提示模板
+        
+        Returns:
+            双语描述提示模板
+        """
+        # 从配置中获取自定义提示模板
+        custom_prompt = self.get("translation.prompts.bilingual_description")
+        
+        # 如果存在自定义提示模板，则返回
+        if custom_prompt:
+            return custom_prompt
+            
+        # 返回默认提示模板
+        return """As a sound effect expert, provide both English and Chinese descriptions for this sound effect.
+Keep English under 25 characters and Chinese between 3-9 characters.
+
+Focus on describing:
+1. Sound source (what makes the sound)
+2. Action/state (what's happening)
+3. Quality/characteristics (how it sounds)
+
+Examples:
+- human_male_ah_question -> (male vocal question, 男声困惑询问)
+- error_tonal -> (error alert tone, 电子错误提示)
+- click_blip -> (sharp click blip, 清脆按键声)
+- cloth_nylon_movement -> (nylon cloth movement, 尼龙布料摩擦)
+- metal_door_slam -> (heavy metal door slam, 金属重门砰响)
+- footstep_concrete -> (footsteps on concrete, 混凝土脚步)
+
+Format: Return exactly two lines:
+1. English: [english description]
+2. Chinese: [chinese description]
+
+Describe: {text}""" 

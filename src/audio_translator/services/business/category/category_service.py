@@ -105,45 +105,139 @@ class CategoryService(BaseService):
             config_service = ServiceFactory.get_instance().get_service('config_service')
             if config_service:
                 self.data_dir = Path(config_service.get_data_dir())
-                self.categories_file = self.data_dir / "categories" / "_categorylist.csv"
-                # 确保目录存在
-                os.makedirs(self.data_dir / "categories", exist_ok=True)
+                
+                # 直接从data目录的根查找
+                root_file = self.data_dir / "_categorylist.csv"
+                if root_file.exists():
+                    self.categories_file = root_file
+                    logger.info(f"找到根目录分类文件: {root_file}")
+                    return
+                
+                # 如果根目录没有，检查categories子目录
+                categories_dir = self.data_dir / "categories"
+                if not categories_dir.exists():
+                    os.makedirs(categories_dir, exist_ok=True)
+                    
+                category_file = categories_dir / "_categorylist.csv"
+                if category_file.exists():
+                    self.categories_file = category_file
+                    logger.info(f"找到子目录分类文件: {category_file}")
+                    return
+                    
+                # 如果都不存在，优先使用根目录
+                self.categories_file = root_file
+                logger.warning(f"分类文件不存在，将使用路径: {root_file}")
             else:
                 # 默认路径
                 self.data_dir = Path('data')
-                self.categories_file = self.data_dir / "categories" / "_categorylist.csv"
-                # 确保目录存在
-                os.makedirs(self.data_dir / "categories", exist_ok=True)
+                root_file = self.data_dir / "_categorylist.csv"
+                if root_file.exists():
+                    self.categories_file = root_file
+                else:
+                    self.categories_file = self.data_dir / "categories" / "_categorylist.csv"
                 
             logger.debug(f"分类文件路径: {self.categories_file}")
         except Exception as e:
             logger.error(f"初始化路径配置失败: {e}")
             # 使用默认路径
             self.data_dir = Path('data')
-            self.categories_file = self.data_dir / "categories" / "_categorylist.csv"
-            # 确保目录存在
-            os.makedirs(self.data_dir / "categories", exist_ok=True)
+            self.categories_file = self.data_dir / "_categorylist.csv"
     
     def _load_categories(self):
         """从CSV文件加载分类数据"""
-        if not self.categories_file or not self.categories_file.exists():
+        if not self.categories_file:
+            logger.error("未设置分类文件路径")
+            return
+            
+        logger.info(f"尝试从 {self.categories_file} 加载分类数据")
+            
+        if not self.categories_file.exists():
             logger.warning(f"分类文件不存在: {self.categories_file}")
+            # 创建默认分类
+            self._create_default_categories()
             return
         
         try:
             self.categories.clear()
             
-            with open(self.categories_file, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    # 创建Category对象并添加到字典
-                    cat = Category.from_dict(row)
-                    self.categories[cat.cat_id] = cat
+            # 首先检查文件内容
+            with open(self.categories_file, 'r', encoding='utf-8', errors='replace') as f:
+                content_preview = f.read(1000)
+                logger.debug(f"文件内容预览: {content_preview[:200]}...")
+                if len(content_preview.strip()) == 0:
+                    logger.warning(f"分类文件为空: {self.categories_file}")
+                    self._create_default_categories()
+                    return
+
+            with open(self.categories_file, 'r', encoding='utf-8', errors='replace') as f:
+                # 尝试不同的CSV方言
+                try:
+                    reader = csv.DictReader(f)
+                    field_names = reader.fieldnames or []
+                    
+                    if not field_names:
+                        logger.error(f"无法解析CSV字段: {self.categories_file}")
+                        self._create_default_categories()
+                        return
+                        
+                    logger.debug(f"CSV字段: {field_names}")
+                    
+                    # 验证必需的字段
+                    required_fields = ['CatID', 'Category', 'Category_zh']
+                    missing_fields = [field for field in required_fields if field not in field_names]
+                    
+                    if missing_fields:
+                        logger.error(f"CSV文件缺少必需字段: {missing_fields}")
+                        self._create_default_categories()
+                        return
+                    
+                    # 读取数据
+                    success_count = 0
+                    error_count = 0
+                    
+                    for row_idx, row in enumerate(reader, start=2):  # 从2开始计数（考虑标题行）
+                        try:
+                            # 跳过空行
+                            if not row or not any(row.values()):
+                                continue
+                                
+                            # 确保CatID有值
+                            cat_id = row.get('CatID', '').strip()
+                            if not cat_id:
+                                logger.warning(f"第{row_idx}行: 跳过没有CatID的行")
+                                continue
+                                
+                            # 创建Category对象并添加到字典
+                            cat = Category.from_dict(row)
+                            self.categories[cat.cat_id] = cat
+                            success_count += 1
+                        except Exception as cat_error:
+                            logger.warning(f"第{row_idx}行: 处理分类行时出错: {row}, 错误: {cat_error}")
+                            error_count += 1
+                            
+                    if success_count > 0:
+                        logger.info(f"成功加载 {success_count} 个分类")
+                    else:
+                        logger.error(f"未能成功加载任何分类")
+                        
+                    if error_count > 0:
+                        logger.warning(f"解析CSV时有 {error_count} 行出现错误")
+                    
+                except Exception as csv_error:
+                    logger.error(f"CSV解析失败: {csv_error}")
+                    self._create_default_categories()
+                    return
             
-            logger.info(f"成功加载 {len(self.categories)} 个分类")
+            # 如果没有加载到任何分类，创建默认分类
+            if len(self.categories) == 0:
+                logger.warning("未加载到任何分类，创建默认分类")
+                self._create_default_categories()
+                
         except Exception as e:
             logger.error(f"加载分类数据失败: {e}")
             self.categories = {}
+            # 创建默认分类
+            self._create_default_categories()
     
     def save_categories(self) -> bool:
         """
@@ -200,6 +294,50 @@ class CategoryService(BaseService):
             分类对象，不存在则返回None
         """
         return self.categories.get(cat_id)
+    
+    def get_subcategories(self, parent_id: str) -> Dict[str, Category]:
+        """
+        获取指定分类的子分类
+        
+        Args:
+            parent_id: 父分类ID
+            
+        Returns:
+            子分类字典，键为分类ID，值为分类对象
+        """
+        if not parent_id:
+            logger.warning("父分类ID为空，无法获取子分类")
+            return {}
+            
+        subcategories = {}
+        
+        try:
+            # 首先，尝试通过 parent_id 属性获取子分类
+            for cat_id, category in self.categories.items():
+                if hasattr(category, 'parent_id') and category.parent_id == parent_id:
+                    subcategories[cat_id] = category
+            
+            # 如果通过 parent_id 没有找到任何子分类，尝试通过分类名前缀匹配
+            if not subcategories and parent_id in self.categories:
+                parent_category = self.categories[parent_id]
+                parent_prefix = parent_category.cat_id
+                
+                for cat_id, category in self.categories.items():
+                    # 如果分类ID以父分类ID为前缀，且不是父分类本身
+                    if cat_id != parent_id and cat_id.startswith(f"{parent_prefix}_"):
+                        subcategories[cat_id] = category
+            
+            # 记录日志
+            if subcategories:
+                logger.debug(f"找到父分类 '{parent_id}' 的 {len(subcategories)} 个子分类")
+            else:
+                logger.debug(f"未找到父分类 '{parent_id}' 的子分类")
+                
+            return subcategories
+            
+        except Exception as e:
+            logger.error(f"获取子分类时出错: {e}, 父分类ID: {parent_id}")
+            return {}
     
     def add_category(self, category: Category) -> bool:
         """

@@ -29,65 +29,60 @@ class AudioService(BaseService):
     此服务作为应用程序的基础服务之一，为其他组件提供音频处理支持。
     """
     
-    def __init__(self, file_service: FileService, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         初始化音频服务
         
         Args:
-            file_service: 文件服务实例
             config: 服务配置
         """
         super().__init__("audio_service", config)
-        self.file_service = file_service
-        self.supported_formats = {'.wav', '.mp3', '.ogg', '.flac', '.aiff', '.m4a'}
-        self.player = None
+        self.file_service = None
+        self.service_factory = None  # 将由ServiceFactory设置
+        
+        # 支持的音频格式
+        self._supported_formats = {
+            'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'aiff'
+        }
+        
+        # 临时文件目录
+        self.temp_dir = None
     
     def initialize(self) -> bool:
         """
         初始化音频服务
         
-        尝试加载音频处理库，设置音频播放器。
-        
         Returns:
             初始化是否成功
         """
         try:
-            # 确保文件服务已初始化
-            if not self.file_service.is_available():
-                logger.error("文件服务未初始化，无法初始化音频服务")
-                return False
-            
-            # 尝试加载音频库（这里使用一个占位符，实际应用中应替换为实际的音频库）
-            try:
-                # 使用 try 块，因为导入可能失败
-                # 导入首选音频库
-                # import soundfile as sf
-                # self.sf = sf
+            # 获取依赖服务
+            if self.service_factory:
+                # 重置之前的状态
+                self.file_service = None
                 
-                # 设置播放器（使用占位符）
-                # self.player = SomeAudioPlayer()
-                
-                # 由于是基础实现，此处我们不实际加载库，仅做演示
-                pass
-                
-            except ImportError as e:
-                logger.warning(f"未能加载首选音频库: {str(e)}，尝试备用库")
-                try:
-                    # 尝试加载备用音频库
-                    # import wave
-                    # self.wave = wave
-                    pass
-                except ImportError as e2:
-                    logger.error(f"未能加载备用音频库: {str(e2)}")
+                # 获取文件服务
+                self.file_service = self.service_factory.get_service('file_service')
+                if not self.file_service:
+                    logger.error("无法获取文件服务")
                     return False
+            else:
+                logger.error("服务工厂未设置")
+                return False
+                
+            # 创建临时目录
+            self.temp_dir = tempfile.mkdtemp(prefix="audio_translator_")
+            logger.debug(f"创建临时目录: {self.temp_dir}")
             
-            # 加载成功
+            # 初始化播放器
+            self.player = None
+            
             self.is_initialized = True
             logger.info("音频服务初始化成功")
             return True
             
         except Exception as e:
-            logger.error(f"音频服务初始化失败: {str(e)}")
+            logger.error(f"音频服务初始化失败: {e}")
             return False
     
     def shutdown(self) -> bool:
@@ -104,7 +99,7 @@ class AudioService(BaseService):
             self.stop_playback()
             
             # 释放资源
-            if self.player:
+            if hasattr(self, 'player') and self.player is not None:
                 # self.player.release()
                 self.player = None
                 
@@ -127,7 +122,7 @@ class AudioService(BaseService):
             是否支持
         """
         _, ext = os.path.splitext(file_path)
-        return ext.lower() in self.supported_formats
+        return ext.lower() in self._supported_formats
     
     def get_supported_formats(self) -> set:
         """
@@ -136,7 +131,7 @@ class AudioService(BaseService):
         Returns:
             支持的格式集合
         """
-        return self.supported_formats
+        return self._supported_formats
     
     def add_supported_format(self, format_ext: str) -> bool:
         """
@@ -150,7 +145,7 @@ class AudioService(BaseService):
         """
         if not format_ext.startswith('.'):
             format_ext = f'.{format_ext}'
-        self.supported_formats.add(format_ext.lower())
+        self._supported_formats.add(format_ext.lower())
         logger.debug(f"添加支持的音频格式: {format_ext}")
         return True
     
@@ -278,7 +273,7 @@ class AudioService(BaseService):
             if not target_format.startswith('.'):
                 target_format = f'.{target_format}'
                 
-            if target_format not in self.supported_formats:
+            if target_format not in self._supported_formats:
                 logger.error(f"不支持的目标格式: {target_format}")
                 return None
             

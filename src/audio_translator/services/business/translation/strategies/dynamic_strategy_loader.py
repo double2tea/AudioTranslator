@@ -8,9 +8,9 @@ import pkg_resources
 from typing import Dict, Any, List, Type, Optional
 from pathlib import Path
 
-from ..strategies.strategy_registry import StrategyRegistry 
-from ..strategies.base_strategy import ITranslationStrategy
-from ..strategies.model_service_adapter import ModelServiceAdapter
+from .strategy_registry import StrategyRegistry 
+from ....core.interfaces import ITranslationStrategy
+from .model_service_adapter import ModelServiceAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class DynamicStrategyLoader:
         
         Args:
             registry: 策略注册表实例
-            config_dir: 配置文件目录，默认为包内的config/strategies
+            config_dir: 配置文件目录，默认为项目根目录下的config
             plugins_dir: 插件目录，默认为包内的plugins/strategies
         """
         self.registry = registry
@@ -31,11 +31,30 @@ class DynamicStrategyLoader:
         # 使用基于包的路径
         self.package_path = Path(pkg_resources.resource_filename('audio_translator', ''))
         
-        # 配置文件目录
+        # 配置文件目录 - 使用与ConfigService一致的路径
         if config_dir:
             self.config_dir = config_dir
         else:
-            self.config_dir = str(self.package_path / 'config' / 'strategies')
+            # 使用与ConfigService相同的配置目录计算方式
+            # 简化路径计算，直接使用相对路径
+            # 从当前文件所在目录开始向上找，直到找到src/config目录
+            current_file = Path(__file__).resolve()
+            project_root = current_file.parent
+            
+            # 向上寻找直到找到src目录
+            while project_root.name != "src" and project_root != project_root.parent:
+                project_root = project_root.parent
+                
+            # 项目级配置目录
+            config_path = project_root / "config"
+            
+            if config_path.exists():
+                self.config_dir = str(config_path)
+                logger.info(f"使用项目级配置目录: {self.config_dir}")
+            else:
+                # 回退到包内配置目录
+                self.config_dir = str(self.package_path / 'config' / 'strategies')
+                logger.warning(f"项目级配置目录不存在，回退到包内配置: {self.config_dir}")
             
         # 插件目录
         if plugins_dir:
@@ -56,7 +75,23 @@ class DynamicStrategyLoader:
             加载的策略数量
         """
         if config_file is None:
-            config_file = os.path.join(self.config_dir, 'strategies.json')
+            # 尝试从项目级配置目录加载
+            project_config_file = os.path.join(self.config_dir, 'strategies.json')
+            
+            if os.path.exists(project_config_file):
+                config_file = project_config_file
+                logger.info(f"使用项目级策略配置文件: {config_file}")
+            else:
+                # 尝试查找包内策略配置
+                package_config_dir = str(self.package_path / 'config' / 'strategies')
+                package_config_file = os.path.join(package_config_dir, 'strategies.json')
+                
+                if os.path.exists(package_config_file):
+                    config_file = package_config_file
+                    logger.info(f"使用包内策略配置文件: {config_file}")
+                else:
+                    logger.warning(f"策略配置文件不存在: 项目级({project_config_file})或包内({package_config_file})")
+                    return 0
             
         if not os.path.exists(config_file):
             logger.warning(f"策略配置文件不存在: {config_file}")
@@ -100,14 +135,26 @@ class DynamicStrategyLoader:
                 
             strategy_type = strategy_config['type']
             try:
-                # 尝试加载策略适配器
-                adapter_class = self._get_adapter_class(strategy_type)
-                if adapter_class:
-                    adapter_instance = adapter_class(strategy_config)
-                    self.registry.register_strategy(adapter_instance)
-                    self.loaded_strategies[strategy_name] = adapter_instance
-                    loaded_count += 1
-                    logger.info(f"已成功加载策略: {strategy_name} (类型: {strategy_type})")
+                # 复制配置并添加必要的字段
+                config_copy = dict(strategy_config)
+                
+                # 确保配置中包含策略名称
+                if 'name' not in config_copy:
+                    config_copy['name'] = strategy_name
+                
+                # 创建和注册策略实例
+                if strategy_type in ['openai', 'anthropic', 'gemini', 'alibaba', 'zhipu', 'volc', 'deepseek']:
+                    # 针对内置适配器类使用register方法
+                    adapter_class = self._get_adapter_class(strategy_type)
+                    if adapter_class:
+                        adapter_instance = adapter_class(config_copy)
+                        registered = self.registry.register(strategy_name, adapter_instance)
+                        if registered:
+                            self.loaded_strategies[strategy_name] = adapter_instance
+                            loaded_count += 1
+                            logger.info(f"已成功加载策略: {strategy_name} (类型: {strategy_type})")
+                else:
+                    logger.error(f"不支持的策略类型: {strategy_type}")
             except Exception as e:
                 logger.error(f"加载策略失败 {strategy_name}: {e}")
                 
@@ -186,26 +233,45 @@ class DynamicStrategyLoader:
                 
         return strategy_classes
         
-    def _get_adapter_class(self, adapter_type: str) -> Optional[Type[ModelServiceAdapter]]:
+    def _get_adapter_class(self, adapter_type: str):
         """
         获取适配器类
         
         Args:
-            adapter_type: 适配器类型
+            adapter_type: 适配器类型（如openai, anthropic等）
             
         Returns:
-            适配器类
+            适配器类，如果找不到则返回None
         """
-        # 构建适配器导入路径
+        # 转换格式，例如 "openai" -> "openai_adapter" 模块, "OpenAIAdapter" 类
         module_path = f"audio_translator.services.business.translation.strategies.adapters.{adapter_type}_adapter"
-        class_name = f"{adapter_type.capitalize()}Adapter"
+        
+        # 支持两种类名格式：大写驼峰式如OpenAIAdapter和首字母大写如OpenaiAdapter
+        class_names = [
+            f"{adapter_type.upper()}Adapter",  # OpenAIAdapter
+            f"{adapter_type.capitalize()}Adapter"  # OpenaiAdapter
+        ]
         
         try:
             # 动态导入适配器模块
             module = importlib.import_module(module_path)
-            # 获取适配器类
-            adapter_class = getattr(module, class_name)
-            return adapter_class
+            
+            # 尝试获取各种格式的适配器类
+            for class_name in class_names:
+                try:
+                    adapter_class = getattr(module, class_name)
+                    return adapter_class
+                except AttributeError:
+                    continue
+                
+            # 如果上面都没找到，尝试更智能的查找方式
+            for attr_name in dir(module):
+                if attr_name.lower() == f"{adapter_type.lower()}adapter":
+                    return getattr(module, attr_name)
+                    
+            logger.error(f"在模块 {module_path} 中找不到适配器类 {adapter_type}Adapter")
+            return None
+            
         except (ImportError, AttributeError) as e:
             logger.error(f"加载适配器类失败 {adapter_type}: {e}")
             return None

@@ -255,15 +255,31 @@ class CategoryManager:
         
         return cat_id in self.category_service.get_all_categories()
     
-    def get_all_categories(self) -> List[Dict[str, Any]]:
+    def get_all_categories(self) -> Dict[str, Any]:
         """
         获取所有分类
         
         Returns:
-            所有分类的列表，UI格式
+            所有分类的字典，键为分类ID，值为分类对象
         """
         if not self.category_service:
             logger.error("分类服务未设置")
-            return []
+            return {}
         
-        return self.category_service.get_categories_for_ui() 
+        return self.category_service.get_all_categories()
+    
+    def get_subcategories(self, parent_id: str) -> Dict[str, Any]:
+        """
+        获取子分类
+        
+        Args:
+            parent_id: 父分类ID
+            
+        Returns:
+            子分类的字典，键为分类ID，值为分类对象
+        """
+        if not self.category_service:
+            logger.error("分类服务未设置")
+            return {}
+        
+        return self.category_service.get_subcategories(parent_id) 

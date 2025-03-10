@@ -46,43 +46,53 @@ class TranslationManager(BaseService):
         Args:
             config: 翻译管理器配置
         """
-        super().__init__('translation_manager', config)
+        super().__init__('translation_manager_service', config)
+        
+        # 配置信息
+        self.config = config or {}
+        
+        # 服务工厂，用于获取依赖服务
+        self.service_factory = None
         
         # 翻译策略注册表
         self.strategy_registry = StrategyRegistry()
         
-        # 命名规则注册表
-        self._naming_rules: Dict[str, INamingRule] = {}
+        # 缓存管理器
+        self.cache_manager = CacheManager()
         
-        # 默认策略和规则
-        self._default_strategy = None
-        self._default_rule = None
+        # 上下文处理器
+        self.context_processor = ContextProcessor()
         
-        # 依赖服务
-        self._category_service = None
-        self._ucs_service = None
-        
-        # 初始化缓存管理器
-        cache_config = self.config.get('cache', {})
-        self.cache_manager = CacheManager(cache_config)
-        
-        # 初始化上下文处理器
-        context_config = self.config.get('context', {})
-        self.context_processor = ContextProcessor(context_config)
-        
-        # 初始化动态策略加载器
-        config_dir = self.config.get('config_dir', None)
+        # 动态策略加载器
+        config_dir = self.config.get('strategies_config_dir', None)
         plugins_dir = self.config.get('plugins_dir', None)
         self.strategy_loader = DynamicStrategyLoader(self.strategy_registry, config_dir, plugins_dir)
         
-        # 运行指标
+        # 默认翻译策略
+        self.default_strategy = None
+        
+        # 默认命名规则
+        self.default_rule = None
+        
+        # 性能指标
         self.metrics = {
             "total_requests": 0,
             "successful_requests": 0,
             "failed_requests": 0,
             "average_response_time": 0,
-            "last_updated": time.time()
+            "cache_hits": 0,
+            "cache_misses": 0
         }
+        
+        # 加载默认配置
+        self._load_default_config()
+        
+        # 命名规则注册表
+        self._naming_rules: Dict[str, INamingRule] = {}
+        
+        # 依赖服务
+        self._category_service = None
+        self._ucs_service = None
     
     def initialize(self) -> bool:
         """
@@ -122,7 +132,21 @@ class TranslationManager(BaseService):
             
             # 初始化缓存管理器
             if self.cache_manager:
-                self.cache_manager.initialize()
+                try:
+                    # 尝试调用initialize方法
+                    if hasattr(self.cache_manager, 'initialize'):
+                        self.cache_manager.initialize()
+                    else:
+                        # 如果没有initialize方法，直接调用_initialize_cache方法
+                        logger.warning("CacheManager没有initialize方法，尝试调用_initialize_cache")
+                        if hasattr(self.cache_manager, '_initialize_cache'):
+                            self.cache_manager._initialize_cache()
+                except Exception as cache_error:
+                    # 如果初始化失败，创建一个新的缓存管理器
+                    logger.warning(f"缓存管理器初始化失败: {cache_error}，创建新的缓存管理器")
+                    self.cache_manager = CacheManager()
+                    # 确保新的缓存管理器已初始化
+                    self.cache_manager._initialize_cache()
             
             self.is_initialized = True
             logger.info("翻译管理器初始化成功")
@@ -135,8 +159,8 @@ class TranslationManager(BaseService):
     def _load_default_config(self):
         """加载默认配置"""
         # 从配置中读取默认策略和规则
-        self._default_strategy = self.config.get('default_strategy', 'openai')
-        self._default_rule = self.config.get('default_rule', 'direct')
+        self.default_strategy = self.config.get('default_strategy', 'openai')
+        self.default_rule = self.config.get('default_rule', 'direct')
     
     def _register_default_strategies(self):
         """注册默认翻译策略"""
@@ -175,9 +199,9 @@ class TranslationManager(BaseService):
             # 设置默认策略
             default_strategy = self.config.get('default_strategy', 'openai')
             if self.strategy_registry.has(default_strategy):
-                self._default_strategy = default_strategy
+                self.default_strategy = default_strategy
             elif self.strategy_registry.list_strategies():
-                self._default_strategy = self.strategy_registry.list_strategies()[0]
+                self.default_strategy = self.strategy_registry.list_strategies()[0]
             
             logger.info(f"成功注册{len(self.strategy_registry.list_strategies())}个翻译策略")
         except Exception as e:
@@ -231,7 +255,7 @@ class TranslationManager(BaseService):
             设置是否成功
         """
         if self.strategy_registry.get(name):
-            self._default_strategy = name
+            self.default_strategy = name
             # 更新配置
             self.config['default_strategy'] = name
             logger.info(f"设置默认翻译策略: {name}")
@@ -250,7 +274,7 @@ class TranslationManager(BaseService):
             设置是否成功
         """
         if name in self._naming_rules:
-            self._default_rule = name
+            self.default_rule = name
             # 更新配置
             self.config['default_rule'] = name
             logger.info(f"设置默认命名规则: {name}")
@@ -269,7 +293,7 @@ class TranslationManager(BaseService):
             翻译策略实例，找不到则返回None
         """
         if name is None:
-            name = self._default_strategy
+            name = self.default_strategy
         
         return self.strategy_registry.get(name)
     
@@ -284,7 +308,7 @@ class TranslationManager(BaseService):
             命名规则实例，找不到则返回None
         """
         if name is None:
-            name = self._default_rule
+            name = self.default_rule
         
         return self._naming_rules.get(name)
     
@@ -414,10 +438,10 @@ class TranslationManager(BaseService):
                 'name': name,
                 'description': strategy.get_description(),
                 'provider_type': strategy.get_provider_type(),
-                'is_default': name == self._default_strategy,
-                'capabilities': strategy.get_capabilities(),
-                'metadata': metadata
+                'is_default': name == self.default_strategy,
+                'metadata': metadata or {}
             })
+            
         return strategies
     
     def get_available_rules(self) -> List[Dict[str, Any]]:
@@ -438,7 +462,7 @@ class TranslationManager(BaseService):
                 'name': name,
                 'description': description,
                 'required_fields': rule.get_required_fields(),
-                'is_default': name == self._default_rule
+                'is_default': name == self.default_rule
             })
         return rules
     
@@ -526,7 +550,7 @@ class TranslationManager(BaseService):
         
         try:
             # 使用指定策略或默认策略
-            strategy_name = strategy_name or self._default_strategy
+            strategy_name = strategy_name or self.default_strategy
             strategy = self.strategy_registry.get(strategy_name)
             
             if not strategy:
@@ -669,3 +693,15 @@ class TranslationManager(BaseService):
         else:
             # 使用移动平均值
             self.metrics["average_response_time"] = current_avg * 0.9 + response_time * 0.1 
+    
+    def get_strategy(self, strategy_name: str) -> Optional[ITranslationStrategy]:
+        """
+        获取指定名称的翻译策略
+        
+        Args:
+            strategy_name: 策略名称
+            
+        Returns:
+            翻译策略对象，如果不存在则返回None
+        """
+        return self.strategy_registry.get(strategy_name) 

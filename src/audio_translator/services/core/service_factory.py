@@ -16,8 +16,8 @@ from ..business.audio_service import AudioService
 from ..infrastructure.config_service import ConfigService
 from ..business.ucs.ucs_service import UCSService
 from .service_manager_service import ServiceManagerService
+
 from ..business.translator_service import TranslatorService
-from ..business.category.category_service import CategoryService
 from ..business.theme_service import ThemeService
 from ..api.providers.openai.openai_service import OpenAIService
 from ..api.providers.anthropic.anthropic_service import AnthropicService
@@ -50,10 +50,16 @@ class ServiceFactory(IServiceRegistry):
         """获取单例实例"""
         if cls._instance is None:
             cls._instance = cls()
+            logger.info("创建ServiceFactory单例实例")
         return cls._instance
     
     def __init__(self):
         """初始化服务工厂"""
+        # 如果已存在实例，直接返回该实例
+        if ServiceFactory._instance is not None and self != ServiceFactory._instance:
+            logger.warning("尝试创建新的ServiceFactory实例，但已存在单例实例")
+            return
+            
         # 存储已创建的服务实例
         self._services: Dict[str, BaseService] = {}
         # 记录已初始化的服务
@@ -78,8 +84,10 @@ class ServiceFactory(IServiceRegistry):
             'translator_service': 'audio_translator.services.business.translator_service.TranslatorService',
             'category_service': 'audio_translator.services.business.category.category_service.CategoryService',
             'theme_service': 'audio_translator.services.business.theme_service.ThemeService',
-            'ucs_service': 'audio_translator.services.business.ucs_service.UCSService',
+            'ucs_service': 'audio_translator.services.business.ucs.ucs_service.UCSService',
             'naming_service': 'audio_translator.services.business.naming.naming_service.NamingService',
+            'translation_manager_service': 'audio_translator.services.business.translation.translation_manager.TranslationManager',
+            'service_manager_service': 'audio_translator.services.core.service_manager_service.ServiceManagerService',
             
             # API服务
             'model_service': 'audio_translator.services.api.model_service.ModelService',
@@ -170,6 +178,7 @@ class ServiceFactory(IServiceRegistry):
         获取服务实例
         
         如果服务实例不存在，会先创建并初始化服务及其依赖。
+        如果服务存在但未初始化或已关闭，会重新初始化它。
         
         Args:
             service_name: 服务名称
@@ -177,28 +186,51 @@ class ServiceFactory(IServiceRegistry):
         Returns:
             服务实例，如果获取失败则返回 None
         """
-        # 如果服务已存在且已初始化，直接返回
-        if service_name in self._services and service_name in self._initialized_services:
-            return self._services[service_name]
-        
-        # 如果服务未注册且不在依赖关系中，返回 None
-        if service_name not in self._dependencies and service_name not in self._services:
-            logger.error(f"未注册的服务类型 '{service_name}'")
-            return None
-        
-        # 如果服务存在但未初始化
-        if service_name in self._services:
-            if not self._initialize_service(service_name):
-                logger.error(f"初始化服务 '{service_name}' 失败")
+        try:
+            # 如果服务已存在且已初始化，直接返回
+            if service_name in self._services and service_name in self._initialized_services:
+                # 额外检查服务是否实际可用（可能已被关闭）
+                service = self._services[service_name]
+                if service and hasattr(service, 'is_available') and callable(service.is_available) and service.is_available():
+                    return service
+                elif service and hasattr(service, 'is_initialized') and service.is_initialized:
+                    return service
+            
+            # 如果服务未注册且不在依赖关系中，返回 None
+            if service_name not in self._dependencies and service_name not in self._services:
+                logger.error(f"未注册的服务类型 '{service_name}'")
                 return None
-            return self._services[service_name]
-        
-        # 创建服务
-        if self._create_service(service_name):
-            return self._services[service_name]
-        
-        logger.error(f"服务 '{service_name}' 创建失败")
-        return None
+            
+            # 如果服务存在但未初始化或已关闭
+            if service_name in self._services:
+                # 如果服务在 _initialized_services 中但实际不可用，从 _initialized_services 中移除
+                service = self._services[service_name]
+                is_available = False
+                
+                if hasattr(service, 'is_available') and callable(service.is_available):
+                    is_available = service.is_available()
+                elif hasattr(service, 'is_initialized'):
+                    is_available = service.is_initialized
+                
+                if service_name in self._initialized_services and not is_available:
+                    self._initialized_services.remove(service_name)
+                
+                # 尝试初始化服务
+                if not self._initialize_service(service_name):
+                    logger.error(f"初始化服务 '{service_name}' 失败")
+                    return None
+                return self._services[service_name]
+            
+            # 创建服务
+            if self._create_service(service_name):
+                return self._services[service_name]
+            
+            logger.error(f"服务 '{service_name}' 创建失败")
+            return None
+            
+        except Exception as e:
+            logger.error(f"获取服务 '{service_name}' 时发生错误: {str(e)}")
+            return None
     
     def has_service(self, service_name: str) -> bool:
         """
@@ -231,23 +263,51 @@ class ServiceFactory(IServiceRegistry):
                 
             # 动态导入服务类
             module_path, class_name = service_class_path.rsplit('.', 1)
-            module = importlib.import_module(module_path)
-            service_class = getattr(module, class_name)
+            try:
+                module = importlib.import_module(module_path)
+                service_class = getattr(module, class_name)
+            except (ImportError, AttributeError) as e:
+                logger.error(f"导入服务类失败: {service_name}, {e}")
+                return False
             
             # 获取服务配置
             config = self._services_config.get(service_name, {})
             
             # 创建服务实例
-            service = service_class(config)
+            if service_name == 'config_service':
+                # 配置服务需要特殊处理，直接传递config_file参数
+                config_file = config.get('config_file')
+                service = service_class(config_file)
+            elif service_name in ['translation_manager_service', 'service_manager_service']:
+                # 这些服务需要特殊处理
+                try:
+                    # 首先尝试使用标准参数创建服务
+                    service = service_class(config)
+                except TypeError:
+                    # 如果失败，尝试适配接口
+                    logger.debug(f"使用特殊参数创建服务: {service_name}")
+                    # 创建的服务可能需要名称参数
+                    service = service_class(service_name, config)
+            else:
+                # 其他服务正常传递配置字典
+                service = service_class(config)
             
-            # 初始化服务
-            if isinstance(service, BaseService):
-                if not service.initialize():
-                    logger.error(f"服务初始化失败: {service_name}")
-                    return False
+            # 设置服务的service_factory属性，以便服务可以获取其依赖
+            if hasattr(service, 'service_factory'):
+                service.service_factory = self
             
             # 注册服务
             self._services[service_name] = service
+            
+            # 初始化服务
+            if isinstance(service, BaseService):
+                if service.initialize():
+                    self._initialized_services.add(service_name)
+                    logger.info(f"服务 '{service_name}' 初始化成功")
+                else:
+                    logger.error(f"服务初始化失败: {service_name}")
+                    return False
+            
             logger.info(f"服务创建成功: {service_name}")
             return True
         except Exception as e:
@@ -258,7 +318,7 @@ class ServiceFactory(IServiceRegistry):
         """
         初始化服务
         
-        初始化服务及其所有依赖服务。
+        初始化指定的服务及其依赖。
         
         Args:
             service_name: 服务名称
@@ -266,32 +326,64 @@ class ServiceFactory(IServiceRegistry):
         Returns:
             初始化是否成功
         """
-        # 如果服务已初始化，直接返回成功
-        if service_name in self._initialized_services:
-            return True
-        
-        # 如果服务未创建，返回失败
-        if service_name not in self._services:
-            logger.error(f"初始化服务 '{service_name}' 失败：服务未创建")
-            return False
-        
-        # 获取服务实例
-        service = self._services[service_name]
-        
-        # 先初始化所有依赖
-        for dep_name in self._dependencies.get(service_name, set()):
-            if not self._initialize_service(dep_name):
-                logger.error(f"初始化服务 '{service_name}' 失败：依赖服务 '{dep_name}' 初始化失败")
+        try:
+            logger.info(f"正在初始化服务: {service_name}")
+            
+            # 如果服务已初始化，直接返回成功
+            if service_name in self._initialized_services:
+                service = self._services[service_name]
+                if hasattr(service, 'is_initialized') and service.is_initialized:
+                    logger.debug(f"服务 '{service_name}' 已初始化，跳过")
+                    return True
+                
+                # 如果服务标记为已初始化但实际上没有初始化，移除标记
+                self._initialized_services.remove(service_name)
+            
+            # 如果服务不存在，创建服务
+            if service_name not in self._services:
+                if not self._create_service(service_name):
+                    logger.error(f"无法创建服务 '{service_name}'")
+                    return False
+            
+            # 获取服务实例
+            service = self._services[service_name]
+            
+            # 初始化依赖
+            if service_name in self._dependencies:
+                for dependency in self._dependencies[service_name]:
+                    # 避免循环依赖
+                    if dependency == service_name:
+                        continue
+                        
+                    if dependency not in self._initialized_services:
+                        if not self._initialize_service(dependency):
+                            logger.error(f"初始化依赖 '{dependency}' 失败")
+                            return False
+            
+            # 调用服务的初始化方法
+            if hasattr(service, 'is_initialized') and service.is_initialized:
+                logger.debug(f"服务 '{service_name}' 已经初始化过")
+                self._initialized_services.add(service_name)
+                return True
+                
+            # 如果服务有service_factory属性，设置为当前实例
+            if hasattr(service, 'service_factory'):
+                service.service_factory = self
+                
+            # 确保我们是单例实例
+            ServiceFactory._instance = self
+                
+            # 调用初始化方法
+            if service.initialize():
+                self._initialized_services.add(service_name)
+                logger.info(f"服务 '{service_name}' 初始化成功")
+                return True
+            else:
+                logger.error(f"服务 '{service_name}' 初始化失败")
                 return False
-        
-        # 初始化当前服务
-        logger.info(f"正在初始化服务: {service_name}")
-        if service.initialize():
-            self._initialized_services.add(service_name)
-            logger.info(f"服务 '{service_name}' 初始化成功")
-            return True
-        else:
-            logger.error(f"服务 '{service_name}' 初始化失败")
+                
+        except Exception as e:
+            logger.error(f"初始化服务 '{service_name}' 时发生错误: {e}")
             return False
     
     def initialize_all_services(self) -> bool:
@@ -381,20 +473,64 @@ class ServiceFactory(IServiceRegistry):
         获取文件服务
         
         Returns:
-            文件服务实例
+            文件服务实例，如果获取失败则返回 None
         """
-        service = self.get_service("file_service")
-        return service if isinstance(service, FileService) else None
+        try:
+            service = self.get_service('file_service')
+            # 确保返回的是正确的类型
+            if service and isinstance(service, FileService):
+                return service
+            else:
+                # 直接从_services字典获取
+                direct_service = self._services.get('file_service')
+                if direct_service and isinstance(direct_service, FileService):
+                    # 确保服务已初始化
+                    if direct_service.is_initialized:
+                        if 'file_service' not in self._initialized_services:
+                            self._initialized_services.add('file_service')
+                        return direct_service
+                    elif self._initialize_service('file_service'):
+                        return direct_service
+                # 如果直接获取失败，尝试创建新服务
+                logger.warning("无法获取文件服务，尝试创建新实例")
+                if self._create_service('file_service'):
+                    return self._services.get('file_service')
+                return None
+        except Exception as e:
+            logger.error(f"获取文件服务失败: {e}")
+            return None
     
     def get_audio_service(self) -> Optional[AudioService]:
         """
         获取音频服务
         
         Returns:
-            音频服务实例
+            音频服务实例，如果获取失败则返回 None
         """
-        service = self.get_service("audio_service")
-        return service if isinstance(service, AudioService) else None
+        try:
+            service = self.get_service('audio_service')
+            # 确保返回的是正确的类型
+            if service and isinstance(service, AudioService):
+                return service
+            else:
+                # 直接从_services字典获取
+                direct_service = self._services.get('audio_service')
+                if direct_service and isinstance(direct_service, AudioService):
+                    # 确保服务已初始化
+                    if direct_service.is_initialized:
+                        if 'audio_service' not in self._initialized_services:
+                            self._initialized_services.add('audio_service')
+                        return direct_service
+                    elif self._initialize_service('audio_service'):
+                        return direct_service
+                # 如果直接获取失败，尝试创建新服务
+                logger.warning("无法获取音频服务，尝试创建新实例")
+                if self._create_service('audio_service'):
+                    return self._services.get('audio_service')
+                return None
+        except Exception as e:
+            logger.error(f"获取音频服务失败: {e}")
+            return None
     
     def get_config_service(self) -> Optional[ConfigService]:
         """
@@ -405,6 +541,18 @@ class ServiceFactory(IServiceRegistry):
         """
         service = self.get_service("config_service")
         return service if isinstance(service, ConfigService) else None
+    
+    def get_category_service(self) -> Optional['CategoryService']:
+        """
+        获取分类服务
+        
+        Returns:
+            分类服务实例
+        """
+        service = self.get_service("category_service")
+        # 避免循环导入
+        from ..business.category.category_service import CategoryService
+        return service if isinstance(service, CategoryService) else None
     
     def get_ucs_service(self) -> Optional[UCSService]:
         """
@@ -428,13 +576,35 @@ class ServiceFactory(IServiceRegistry):
     
     def get_translator_service(self) -> Optional[TranslatorService]:
         """
-        获取翻译服务实例
+        获取翻译服务
         
         Returns:
             翻译服务实例，如果获取失败则返回 None
         """
-        service = self.get_service("translator_service")
-        return service if isinstance(service, TranslatorService) else None
+        try:
+            service = self.get_service('translator_service')
+            # 确保返回的是正确的类型
+            if service and isinstance(service, TranslatorService):
+                return service
+            else:
+                # 直接从_services字典获取
+                direct_service = self._services.get('translator_service')
+                if direct_service and isinstance(direct_service, TranslatorService):
+                    # 确保服务已初始化
+                    if direct_service.is_initialized:
+                        if 'translator_service' not in self._initialized_services:
+                            self._initialized_services.add('translator_service')
+                        return direct_service
+                    elif self._initialize_service('translator_service'):
+                        return direct_service
+                # 如果直接获取失败，尝试创建新服务
+                logger.warning("无法获取翻译服务，尝试创建新实例")
+                if self._create_service('translator_service'):
+                    return self._services.get('translator_service')
+                return None
+        except Exception as e:
+            logger.error(f"获取翻译服务失败: {e}")
+            return None
     
     def get_all_services(self) -> Dict[str, Any]:
         """

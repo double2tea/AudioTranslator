@@ -23,6 +23,7 @@ class Category:
         subcategory_zh: 中文子分类名称
         synonyms_en: 英文同义词列表
         synonyms_zh: 中文同义词列表
+        parent_id: 父分类ID，为空表示根分类
     """
     cat_id: str
     name_en: str
@@ -31,6 +32,7 @@ class Category:
     subcategory_zh: str = ""
     synonyms_en: List[str] = field(default_factory=list)
     synonyms_zh: List[str] = field(default_factory=list)
+    parent_id: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -46,7 +48,8 @@ class Category:
             'subcategory': self.subcategory,
             'subcategory_zh': self.subcategory_zh,
             'synonyms_en': self.synonyms_en,
-            'synonyms_zh': self.synonyms_zh
+            'synonyms_zh': self.synonyms_zh,
+            'parent_id': self.parent_id
         }
     
     @classmethod
@@ -60,14 +63,47 @@ class Category:
         Returns:
             分类对象
         """
+        # 处理同义词列表(可能是JSON字符串或者列表)
+        synonyms_en = data.get('synonyms_en', data.get('synonyms', []))
+        synonyms_zh = data.get('synonyms_zh', [])
+        
+        # 如果是字符串，尝试解析为JSON
+        if isinstance(synonyms_en, str):
+            try:
+                import json
+                synonyms_en = json.loads(synonyms_en)
+            except Exception as e:
+                import logging
+                logging.warning(f"解析英文同义词失败: {e}, 值: {synonyms_en}")
+                # 分割字符串作为备选方案
+                if ',' in synonyms_en:
+                    synonyms_en = [s.strip() for s in synonyms_en.split(',')]
+                else:
+                    synonyms_en = []
+        
+        # 如果是字符串，尝试解析为JSON
+        if isinstance(synonyms_zh, str):
+            try:
+                import json
+                synonyms_zh = json.loads(synonyms_zh)
+            except Exception as e:
+                import logging
+                logging.warning(f"解析中文同义词失败: {e}, 值: {synonyms_zh}")
+                # 分割字符串作为备选方案
+                if ',' in synonyms_zh:
+                    synonyms_zh = [s.strip() for s in synonyms_zh.split(',')]
+                else:
+                    synonyms_zh = []
+        
         return cls(
             cat_id=data.get('CatID', ''),
             name_en=data.get('Category', ''),
             name_zh=data.get('Category_zh', ''),
             subcategory=data.get('subcategory', ''),
             subcategory_zh=data.get('subcategory_zh', ''),
-            synonyms_en=data.get('synonyms_en', data.get('synonyms', [])),
-            synonyms_zh=data.get('synonyms_zh', [])
+            synonyms_en=synonyms_en,
+            synonyms_zh=synonyms_zh,
+            parent_id=data.get('parent_id', '')
         )
     
     def get_full_name_en(self) -> str:

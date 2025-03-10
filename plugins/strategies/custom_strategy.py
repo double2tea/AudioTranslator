@@ -1,7 +1,7 @@
 from typing import Dict, List, Any, Optional
 import time
 
-from audio_translator.services.business.translation.strategies.base_strategy import ITranslationStrategy
+from src.audio_translator.services.business.translation.strategies.base_strategy import ITranslationStrategy
 
 class SimpleCustomStrategy(ITranslationStrategy):
     """

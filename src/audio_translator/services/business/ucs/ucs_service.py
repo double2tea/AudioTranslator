@@ -215,46 +215,54 @@ class UCSService(BaseService):
             return False
 
     def _parse_synonyms(self, synonyms_str: str) -> List[str]:
-        """
-        解析英文同义词
-        
-        Args:
-            synonyms_str: 同义词字符串，多个同义词用分隔符分隔
+        """解析英文同义词字符串"""
+        if not synonyms_str:
+            return []
             
-        Returns:
-            同义词列表
-        """
-        synonyms = []
-        if synonyms_str.strip():
-            # 支持多种分隔符
-            for sep in [',', ';', '|']:
-                if sep in synonyms_str:
-                    synonyms.extend([s.strip().lower() for s in synonyms_str.split(sep) if s.strip()])
-                    break
-            else:
-                synonyms = [synonyms_str.strip().lower()]
-        return list(dict.fromkeys(synonyms))  # 去重
+        try:
+            # 尝试解析为JSON
+            if synonyms_str.startswith('[') and synonyms_str.endswith(']'):
+                try:
+                    import json
+                    return json.loads(synonyms_str)
+                except json.JSONDecodeError:
+                    logging.warning(f"解析同义词JSON失败: {synonyms_str}")
+                    
+            # 如果不是JSON格式，按逗号分割
+            if ',' in synonyms_str:
+                return [s.strip() for s in synonyms_str.split(',') if s.strip()]
+                
+            # 如果没有逗号，按空格分割
+            return [s.strip() for s in synonyms_str.split() if s.strip()]
+                
+        except Exception as e:
+            logging.error(f"解析英文同义词失败: {e}, 原始数据: {synonyms_str}")
+            return []
 
     def _parse_synonyms_zh(self, synonyms_str: str) -> List[str]:
-        """
-        解析中文同义词
-        
-        Args:
-            synonyms_str: 同义词字符串，多个同义词用分隔符分隔
+        """解析中文同义词字符串"""
+        if not synonyms_str:
+            return []
             
-        Returns:
-            同义词列表
-        """
-        synonyms = []
-        if synonyms_str.strip():
-            # 支持多种中文分隔符
-            for sep in ['、', '，', '|']:
-                if sep in synonyms_str:
-                    synonyms.extend([s.strip() for s in synonyms_str.split(sep) if s.strip()])
-                    break
-            else:
-                synonyms = [synonyms_str.strip()]
-        return list(dict.fromkeys(synonyms))  # 去重
+        try:
+            # 尝试解析为JSON
+            if synonyms_str.startswith('[') and synonyms_str.endswith(']'):
+                try:
+                    import json
+                    return json.loads(synonyms_str)
+                except json.JSONDecodeError:
+                    logging.warning(f"解析中文同义词JSON失败: {synonyms_str}")
+                    
+            # 如果不是JSON格式，按逗号分割
+            if ',' in synonyms_str:
+                return [s.strip() for s in synonyms_str.split(',') if s.strip()]
+                
+            # 如果没有逗号，按空格分割
+            return [s.strip() for s in synonyms_str.split() if s.strip()]
+                
+        except Exception as e:
+            logging.error(f"解析中文同义词失败: {e}, 原始数据: {synonyms_str}")
+            return []
 
     def _update_secondary_caches(self, cat_id: str, category_data: Dict[str, Any]):
         """

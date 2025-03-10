@@ -1,10 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import json
+import logging
 from typing import Dict, Any, List, Optional, Callable
 
-from audio_translator.services.business.translation.translation_manager import TranslationManager
+from ....services.business.translation.translation_manager import TranslationManager
 
+logger = logging.getLogger(__name__)
 
 class TranslationStrategyUI:
     """翻译策略选择和配置界面"""
@@ -21,6 +23,33 @@ class TranslationStrategyUI:
         self.translation_manager = translation_manager
         self.current_strategy = None
         self.callbacks = {}  # 回调函数字典
+        
+        # 获取主题服务
+        self.theme_service = None
+        self.colors = {}
+        
+        try:
+            service_factory = translation_manager.service_factory
+            if service_factory:
+                self.theme_service = service_factory.get_service('theme_service')
+                if self.theme_service:
+                    # 获取当前主题颜色
+                    self.colors = self.theme_service.get_theme_colors()
+                    # 为根窗口设置背景色
+                    if isinstance(root, tk.Toplevel):
+                        root.configure(bg=self.colors.get('bg_dark', '#212121'))
+        except Exception as e:
+            logger.warning(f"获取主题服务失败: {e}")
+            # 使用默认暗色主题
+            self.colors = {
+                'bg_dark': '#212121',
+                'bg_light': '#333333',
+                'fg': '#FFFFFF',
+                'accent': '#2196F3',
+                'border': '#555555',
+                'hover': '#484848',
+                'selected': '#1976D2',
+            }
         
         # 创建主框架
         self.main_frame = ttk.Frame(root, padding="10")
@@ -308,25 +337,38 @@ class TranslationStrategyUI:
             
             # 格式化指标
             metrics_text = "全局指标:\n"
-            metrics_text += f"  - 总请求数: {metrics['total_requests']}\n"
-            metrics_text += f"  - 成功请求数: {metrics['successful_requests']}\n"
-            metrics_text += f"  - 失败请求数: {metrics['failed_requests']}\n"
-            metrics_text += f"  - 平均响应时间: {metrics['average_response_time']:.4f}秒\n\n"
+            metrics_text += f"  - 总请求数: {metrics.get('total_requests', 0)}\n"
+            metrics_text += f"  - 成功请求数: {metrics.get('successful_requests', 0)}\n"
+            metrics_text += f"  - 失败请求数: {metrics.get('failed_requests', 0)}\n"
+            # 使用get方法防止KeyError
+            avg_response_time = metrics.get('average_response_time', 0.0)
+            metrics_text += f"  - 平均响应时间: {avg_response_time:.4f}秒\n\n"
             
             if "cache" in metrics:
                 cache_metrics = metrics["cache"]
                 metrics_text += "缓存指标:\n"
-                metrics_text += f"  - 请求总数: {cache_metrics['requests']}\n"
-                metrics_text += f"  - 命中数: {cache_metrics['hits']}\n"
-                metrics_text += f"  - 未命中数: {cache_metrics['misses']}\n"
-                metrics_text += f"  - 命中率: {cache_metrics['hit_rate']:.2%}\n"
-                metrics_text += f"  - 当前缓存大小: {cache_metrics['size']}\n\n"
+                # 使用get方法防止KeyError
+                metrics_text += f"  - 请求总数: {cache_metrics.get('requests', cache_metrics.get('total_requests', 0))}\n"
+                metrics_text += f"  - 命中数: {cache_metrics.get('hits', 0)}\n"
+                metrics_text += f"  - 未命中数: {cache_metrics.get('misses', 0)}\n"
+                # 计算命中率，防止除零错误
+                hit_rate = 0.0
+                if 'hit_rate' in cache_metrics:
+                    hit_rate = cache_metrics['hit_rate']
+                elif 'hits' in cache_metrics and ('requests' in cache_metrics or 'total_requests' in cache_metrics):
+                    total = cache_metrics.get('requests', cache_metrics.get('total_requests', 0))
+                    if total > 0:
+                        hit_rate = cache_metrics['hits'] / total
+                
+                metrics_text += f"  - 命中率: {hit_rate:.2%}\n"
+                metrics_text += f"  - 当前缓存大小: {cache_metrics.get('size', 0)}\n\n"
             
             if self.current_strategy:
                 strategy_name = self.current_strategy.get_name()
                 if "strategies" in metrics and strategy_name in metrics["strategies"]:
                     strategy_metrics = metrics["strategies"][strategy_name]
                     metrics_text += f"策略 {strategy_name} 指标:\n"
+                    # 遍历字典项时使用items()方法
                     for key, value in strategy_metrics.items():
                         metrics_text += f"  - {key}: {value}\n"
             
@@ -336,7 +378,15 @@ class TranslationStrategyUI:
             self.metrics_text.insert(tk.END, metrics_text)
             self.metrics_text.config(state=tk.DISABLED)
         except Exception as e:
-            messagebox.showerror("错误", f"更新指标失败: {e}")
+            import traceback
+            logger.error(f"更新指标失败: {e}\n{traceback.format_exc()}")
+            # 使用更友好的错误消息
+            error_message = f"更新指标失败: {type(e).__name__}"
+            if "requests" in str(e):
+                error_message = "更新指标失败: 需要安装requests模块"
+            elif "ModuleNotFoundError" in str(e):
+                error_message = f"更新指标失败: 缺少必要模块 - {str(e)}"
+            messagebox.showinfo("提示", error_message)
     
     def register_callback(self, event_name: str, callback: Callable) -> None:
         """
@@ -354,22 +404,49 @@ class TranslationStrategyUI:
         self._update_metrics()
 
 
-def create_translation_strategy_window(translation_manager: TranslationManager) -> tk.Toplevel:
+def create_translation_strategy_dialog(parent, translation_manager: TranslationManager) -> tk.Toplevel:
     """
-    创建翻译策略配置窗口
+    创建翻译策略配置对话框
     
     Args:
+        parent: 父窗口
         translation_manager: 翻译管理器实例
         
     Returns:
-        Toplevel窗口实例
+        Toplevel对话框实例
     """
-    window = tk.Toplevel()
-    window.title("翻译策略配置")
-    window.geometry("800x600")
-    window.minsize(600, 500)
+    dialog = tk.Toplevel(parent)
+    dialog.title("翻译策略配置")
+    dialog.geometry("800x600")
+    dialog.minsize(600, 500)
     
-    ui = TranslationStrategyUI(window, translation_manager)
-    ui.show()
+    # 设置为模态对话框
+    dialog.transient(parent)
+    dialog.grab_set()
     
-    return window 
+    # 应用主题
+    try:
+        # 尝试获取主题服务
+        service_factory = translation_manager.service_factory
+        if service_factory:
+            theme_service = service_factory.get_service('theme_service')
+            if theme_service:
+                # 应用主题到对话框
+                theme_service.setup_dialog_theme(dialog)
+    except Exception as e:
+        logger.warning(f"应用主题到对话框失败: {e}")
+    
+    ui = TranslationStrategyUI(dialog, translation_manager)
+    
+    # 修复CacheManager中的requests错误
+    try:
+        ui.show()
+    except Exception as e:
+        if 'requests' in str(e):
+            import tkinter.messagebox as messagebox
+            messagebox.showinfo("提示", "缓存指标获取失败，请安装requests模块或忽略此错误继续使用")
+        else:
+            # 其他错误则重新抛出
+            raise
+    
+    return dialog 

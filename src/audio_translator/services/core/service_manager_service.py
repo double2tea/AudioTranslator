@@ -46,7 +46,30 @@ class ServiceManagerService(BaseService):
         # 确保调用BaseService的构造函数时提供name参数
         super().__init__("service_manager_service")
         
-        self.config_path = config_path or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "services.json")
+        # 如果未提供配置路径，计算项目级配置目录
+        if not config_path:
+            # 从当前文件所在目录开始向上找，直到找到src/config目录
+            current_file = Path(__file__).resolve()
+            project_root = current_file.parent
+            
+            # 向上寻找直到找到src目录
+            while project_root.name != "src" and project_root != project_root.parent:
+                project_root = project_root.parent
+                
+            # 项目级配置目录路径
+            config_dir = project_root / "config"
+            
+            if config_dir.exists():
+                self.config_path = config_dir / "services.json"
+                logger.info(f"使用项目级配置目录: {config_dir}")
+            else:
+                # 回退到旧路径（虽然这个分支应该不会再执行）
+                self.config_path = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) / "config" / "services.json"
+                logger.warning(f"项目级配置目录不存在，回退到包内配置: {self.config_path}")
+        else:
+            # 使用用户提供的配置路径
+            self.config_path = Path(config_path)
+        
         self.services: Dict[str, ModelService] = {}
         self.service_factory = service_factory
         
